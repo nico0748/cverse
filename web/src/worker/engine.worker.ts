@@ -8,6 +8,7 @@
 import init, { Engine } from "../wasm/pkg/cverse_wasm";
 import wasmUrl from "../wasm/pkg/cverse_wasm_bg.wasm?url";
 import { FORMAT_LABEL, type EdgeType, type Kind, type Meta, type NodeBrief, type PathData, type PathMode, type ViewData } from "../lib/types";
+import { expandImages } from "../lib/images";
 import { NO_NODE, decodePath, decodeView, edgeIrregular, edgeMedia, edgeRole, edgeType } from "./decode";
 
 const KIND: Kind[] = ["va", "ch", "wk"];
@@ -24,7 +25,13 @@ let labels: string[] = [];
 let kinds: Uint8Array;
 let formats: Uint8Array;
 let years: Uint16Array;
+let scores: Uint32Array;
+/** ノード番号 → 画像 URL（無ければ空文字列）。 */
+let images: string[] = [];
 const indexOf = new Map<string, number>();
+
+/** 画像の表を待つ長さ（ms）。これより遅ければ、まず頭文字のアイコンで見せる。 */
+const IMAGES_WAIT = 1500;
 
 async function boot(base: string) {
   const get = async (path: string) => {
@@ -32,20 +39,39 @@ async function boot(base: string) {
     if (!r.ok) throw new Error(`${path} を読み込めません (${r.status})`);
     return r;
   };
-  const [, metaJson, graph, index, search] = await Promise.all([
+  const dataBase = new URL(`${base}data/`, self.location.href).href;
+  const imagesReady = get("images.json")
+    .then((r) => r.json())
+    .then((t) => expandImages(t, dataBase))
+    .catch((e: unknown) => {
+      console.warn("画像の一覧を読み込めませんでした。頭文字のアイコンで表示します。", e);
+      return [] as string[];
+    });
+  void imagesReady.then((list) => {
+    if (list.length) images = list;
+  });
+  const [, metaJson, graph, index, search, imageList] = await Promise.all([
     init({ module_or_path: wasmUrl }),
     get("meta.json").then((r) => r.json()),
     get("graph.bin").then((r) => r.arrayBuffer()),
     get("index.json").then((r) => r.json()),
     get("search.txt").then((r) => r.text()),
+    // 画像の表は無くても動く（頭文字のアイコンになる）ので、読めなくても起動は続ける。
+    // ただし届くのが遅いときは待たずに起動し、届いたところから使う。
+    Promise.race([
+      imagesReady,
+      new Promise<string[]>((resolve) => setTimeout(() => resolve([]), IMAGES_WAIT)),
+    ]),
   ]);
   meta = metaJson;
+  if (imageList.length) images = imageList;
   ids = index.ids;
   labels = index.labels;
   engine = new Engine(new Uint8Array(graph), search);
   kinds = engine.kinds();
   formats = engine.formats();
   years = engine.years();
+  scores = engine.scores();
   ids.forEach((id, i) => indexOf.set(id, i));
   return meta;
 }
@@ -62,9 +88,19 @@ function workSub(w: number): string {
   return [years[w] || "", FORMAT_LABEL[FORMAT[formats[w]]] ?? ""].filter(Boolean).join("・");
 }
 
-/** 検索結果やパンくずに添える補足。キャラは代表作（主役 → 番号の若い＝人気の高い作品）。 */
+/** 検索結果やパンくずに添える補足。声優は代表的な役、キャラは代表作（主役 → 番号の若い＝人気の高い作品）。 */
 function sub(u: number): string | undefined {
   if (kinds[u] === 2) return workSub(u) || undefined;
+  if (kinds[u] === 0) {
+    let best = -1;
+    let count = 0;
+    for (const [v, attr] of neighbors(u)) {
+      if (edgeType(attr) !== 0) continue;
+      count++;
+      if (best < 0 || scores[v] > scores[best]) best = v;
+    }
+    return best < 0 ? undefined : `${labels[best]}役${count > 1 ? "など" : ""}`;
+  }
   if (kinds[u] === 1) {
     let best: [number, number] | null = null;
     for (const [v, attr] of neighbors(u)) {
@@ -78,7 +114,7 @@ function sub(u: number): string | undefined {
 }
 
 function brief(u: number): NodeBrief {
-  return { id: ids[u], label: labels[u], kind: KIND[kinds[u]], sub: sub(u) };
+  return { id: ids[u], label: labels[u], kind: KIND[kinds[u]], sub: sub(u), image: images[u] || undefined };
 }
 
 function voicesOf(ch: number): string[] {
@@ -122,6 +158,9 @@ function view(centerId: string, levels: number, f: FilterArgs): ViewData | null 
         role: n.role,
         voices: kind === "ch" ? voicesOf(n.idx) : undefined,
         note,
+        // 声優の補足（代表的な役）は 1 段目までにとどめる（隣接を数えるので、数百ノード分は重い）。
+        sub: kind === "va" && n.level <= 1 ? sub(n.idx) : undefined,
+        image: images[n.idx] || undefined,
       };
     }),
     edges: raw.edges.map((e) => ({
@@ -164,7 +203,17 @@ function briefs(list: string[]): (NodeBrief | null)[] {
   });
 }
 
-const handlers = { boot, view, path, search, briefs };
+/** つながりを持つ声優を 1 人、無作為に選ぶ（「おまかせ」用）。 */
+function randomVoiceActor(): string | null {
+  const count = meta.counts.voiceActors;
+  for (let tries = 0; tries < 20 && count > 0; tries++) {
+    const u = Math.floor(Math.random() * count);
+    if (kinds[u] === 0 && engine.neighbors(u).length > 0) return ids[u];
+  }
+  return null;
+}
+
+const handlers = { boot, view, path, search, briefs, randomVoiceActor };
 export type Handlers = typeof handlers;
 
 self.onmessage = async (e: MessageEvent<{ id: number; method: keyof Handlers; args: unknown[] }>) => {

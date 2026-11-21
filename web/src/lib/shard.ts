@@ -1,3 +1,4 @@
+import { resolveImage } from "./images";
 import type { Detail, Meta } from "./types";
 
 /** FNV-1a（32 ビット）。crates/cverse-cli/src/build.rs の `fnv1a` と同じ計算。 */
@@ -11,6 +12,14 @@ export function fnv1a(s: string): number {
 }
 
 export const dataUrl = (path: string) => `${import.meta.env.BASE_URL}data/${path}`;
+
+/** 画像の URL。データに同梱された画像（相対パス）は、データの置き場所から解決する。 */
+export const imageUrl = (url: string) => resolveImage(url, dataUrl(""));
+
+/** データ由来のリンク先。`http(s):` 以外（`javascript:` など）はリンクにしない。 */
+export function safeHref(url: string | null | undefined): string | undefined {
+  return url && /^https?:\/\//i.test(url) ? url : undefined;
+}
 
 const shards = new Map<number, Promise<Record<string, Detail>>>();
 

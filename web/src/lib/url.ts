@@ -6,9 +6,11 @@ export interface RouteState {
   depth: number;
   filter: Filter;
   path: { from: string; to: string; mode: PathMode } | null;
+  /** 「つながりを調べる」の画面を開いているか。経路が決まっていれば常に開いている。 */
+  pathOpen: boolean;
 }
 
-export const EMPTY_ROUTE: RouteState = { center: null, depth: 1, filter: DEFAULT_FILTER, path: null };
+export const EMPTY_ROUTE: RouteState = { center: null, depth: 1, filter: DEFAULT_FILTER, path: null, pathOpen: false };
 
 const PATH_MODES: PathMode[] = ["bfs", "main", "weighted"];
 
@@ -35,11 +37,13 @@ export function parseRoute(search: string): RouteState {
   };
   const [from, to] = (q.get("p") ?? "").split("~");
   const mode = q.get("pm") as PathMode;
+  const path = from && to ? { from, to, mode: PATH_MODES.includes(mode) ? mode : "bfs" } : null;
   return {
     center: q.get("c") || null,
     depth: depth === 2 || depth === 3 ? depth : 1,
     filter,
-    path: from && to ? { from, to, mode: PATH_MODES.includes(mode) ? mode : "bfs" } : null,
+    path,
+    pathOpen: path !== null || q.get("t") === "path",
   };
 }
 
@@ -55,6 +59,8 @@ export function serializeRoute(s: RouteState): string {
   if (s.path) {
     q.set("p", `${s.path.from}~${s.path.to}`);
     if (s.path.mode !== "bfs") q.set("pm", s.path.mode);
+  } else if (s.pathOpen) {
+    q.set("t", "path");
   }
   const text = q.toString().replace(/%3A/g, ":").replace(/%7E/g, "~").replace(/%2C/g, ",");
   return text ? `?${text}` : "";

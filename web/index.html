@@ -3,13 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="description" content="声優・キャラ・作品を 1 枚のネットワークで辿る閲覧サイト" />
-    <meta name="theme-color" content="#0b1020" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230b1020'/><circle cx='16' cy='8' r='4.5' fill='%23f0a93b'/><rect x='11.500' y='13' width='9' height='9' rx='2.500' fill='%235bb8f5'/><rect x='4' y='23' width='7' height='6' fill='%232fbf8f'/><rect x='21' y='23' width='7' height='6' fill='%232fbf8f'/></svg>" />
-    <title>CVerse — 声優×キャラ グラフ</title>
+    <meta name="description" content="声優・キャラ・作品のつながりを、1 枚の相関図でたどれるサイト。同じ声優が演じたキャラや、2 人が共演でつながる道を探せます。" />
+    <meta name="theme-color" content="#eef1f6" />
+    <meta property="og:title" content="CVerse | 声優・キャラ・作品の相関図" />
+    <meta property="og:description" content="声優・キャラ・作品のつながりを、1 枚の相関図でたどれます。" />
+    <meta property="og:type" content="website" />
+    <script>
+      // 配色は端末の設定に従い、切り替えたらこの端末に覚える（src/lib/theme.ts と同じ判定）。
+      // 描画の前に決めて、読み込み直後に別の配色が一瞬見えるのを防ぐ。
+      (function () {
+        var t = null;
+        try { t = localStorage.getItem("cverse:theme"); } catch (e) {}
+        if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.dataset.theme = t;
+        if (t === "dark") document.querySelector('meta[name="theme-color"]').content = "#12172a";
+      })();
+    </script>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23ffffff'/><path d='M10 9.5L21 16L11 23.5' stroke='%2366708a' stroke-width='1.5' fill='none'/><circle cx='8.5' cy='8.5' r='6' fill='%23c2650a'/><rect x='16' y='11' width='11' height='11' rx='3.6' fill='%231a7fc4'/><rect x='4' y='19.5' width='9.5' height='9.5' rx='1' fill='%230d8a66'/></svg>" />
+    <title>CVerse | 声優・キャラ・作品の相関図</title>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>CVerse を使うには JavaScript を有効にしてください。</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

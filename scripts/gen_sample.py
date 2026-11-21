@@ -6,8 +6,11 @@
 
     python3 scripts/gen_sample.py
 """
+import colorsys
+import hashlib
 import json
 import pathlib
+import shutil
 
 FETCHED = "2026-11-21"
 
@@ -325,6 +328,107 @@ W|映画けいおん!|MOVIE|2011|62|けいおん!|^けいおん!!
 """
 
 
+# ---- 仮の画像 ----
+# 実データでは AniList などの画像 URL が入る。サンプルでは権利のある画像を使えないので、
+# ID から決まる色と形で「それらしい」縦長（2:3）の絵を SVG で作り、data/sample/images/ に置く。
+# 画像が無いノードの表示も確かめられるよう、8 件に 1 件は画像を付けない。
+
+def _seed(key):
+    return int.from_bytes(hashlib.sha256(key.encode()).digest()[:8], "big")
+
+
+def _hsl(h, s, l):
+    r, g, b = colorsys.hls_to_rgb((h % 360) / 360, l / 100, s / 100)
+    return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
+
+
+SKIN = ["#f6d9c4", "#f2cdb3", "#e9bd9f", "#f8e2d2"]
+
+# 髪型（頭の後ろに描く形, 前髪）。頭は中心 (100, 128)、半径 46 前後。
+HAIR = [
+    # ショート
+    ('<path d="M46 132c-6-58 26-86 54-86s60 28 54 86c-6-16-12-26-20-32-22 8-52 6-70-4-8 8-14 20-18 36z"/>', ""),
+    # ロング
+    ('<path d="M40 250c-10-70-4-108 0-128 6-52 32-78 60-78s54 26 60 78c4 20 10 58 0 128z"/>',
+     '<path d="M52 122c4-36 24-54 48-54s44 18 48 54c-12-18-30-26-48-26s-36 8-48 26z"/>'),
+    # ツインテール
+    ('<path d="M50 120c-34 8-44 58-30 110 10-34 22-60 38-78zM150 120c34 8 44 58 30 110-10-34-22-60-38-78z"/>'
+     '<path d="M48 130c-4-54 24-82 52-82s56 28 52 82c-8-20-14-28-22-34-20 6-44 6-62-2-8 8-14 18-20 36z"/>', ""),
+    # はねた短髪
+    ('<path d="M44 128c-10-30 2-56 16-66l-4-18 20 10 8-20 16 16 18-14 4 20 20-4-6 18c12 12 22 34 16 60-6-18-12-26-22-32-20 8-48 6-66-4-10 8-16 18-20 34z"/>', ""),
+]
+
+
+def person_svg(key, vivid):
+    n = _seed(key)
+    hue = n % 360
+    hair_hue = (n >> 9) % 360
+    back, front = HAIR[(n >> 18) % len(HAIR)]
+    skin = SKIN[(n >> 22) % len(SKIN)]
+    if vivid:  # キャラ: 鮮やかな髪色と明るい背景
+        bg1, bg2 = _hsl(hue, 70, 86), _hsl(hue + 40, 75, 72)
+        hair = _hsl(hair_hue, 62, 46)
+        cloth = _hsl(hair_hue + 150, 45, 38)
+    else:  # 声優: 落ち着いた写真風
+        bg1, bg2 = _hsl(hue, 22, 84), _hsl(hue + 20, 26, 62)
+        hair = _hsl(20 + (n >> 9) % 30, 28, 14 + (n >> 26) % 14)
+        cloth = _hsl(hue + 180, 20, 30)
+    eyes = ""
+    if vivid:
+        eye = _hsl(hair_hue + 200, 60, 34)
+        eyes = f'<g fill="{eye}"><ellipse cx="83" cy="134" rx="6" ry="9"/><ellipse cx="117" cy="134" rx="6" ry="9"/></g>'
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 300" width="200" height="300">'
+        f'<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{bg1}"/>'
+        f'<stop offset="1" stop-color="{bg2}"/></linearGradient></defs>'
+        '<rect width="200" height="300" fill="url(#g)"/>'
+        f'<g fill="{hair}">{back}</g>'
+        f'<path d="M22 300c2-58 34-84 78-84s76 26 78 84z" fill="{cloth}"/>'
+        f'<rect x="86" y="164" width="28" height="40" rx="12" fill="{skin}"/>'
+        f'<ellipse cx="100" cy="128" rx="42" ry="48" fill="{skin}"/>'
+        f'{eyes}<g fill="{hair}">{front}</g>'
+        "</svg>"
+    )
+
+
+def poster_svg(key, title):
+    n = _seed(key)
+    hue = n % 360
+    bg = _hsl(hue, 48, 30)
+    band = _hsl(hue + 28, 62, 52)
+    light = _hsl(hue + 28, 70, 88)
+    head = "".join(ch for ch in title if not ch.isspace())[:2]
+    angle = [-18, -8, 10, 22][(n >> 12) % 4]
+    cy = 96 + (n >> 16) % 40
+    safe = head.replace("&", "&amp;").replace("<", "&lt;")
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 300" width="200" height="300">'
+        f'<rect width="200" height="300" fill="{bg}"/>'
+        f'<g transform="rotate({angle} 100 150)"><rect x="-80" y="{cy + 60}" width="360" height="70" fill="{band}"/>'
+        f'<rect x="-80" y="{cy + 142}" width="360" height="10" fill="{light}"/></g>'
+        f'<circle cx="{40 + (n >> 20) % 120}" cy="{cy - 30}" r="34" fill="{light}" opacity=".9"/>'
+        f'<text x="100" y="{cy + 36}" text-anchor="middle" font-family="sans-serif" font-weight="800" '
+        f'font-size="78" fill="#fff">{safe}</text>'
+        "</svg>"
+    )
+
+
+def attach_images(out, rows, prefix, draw):
+    """`rows` に image を付け、SVG を書き出す。付けた件数を返す。"""
+    count = 0
+    for row in rows:
+        if _seed("skip:" + row["id"]) % 8 == 0:
+            continue
+        name = f"{prefix}-{row['id'].rsplit('-', 1)[-1]}.svg"
+        (out / "images" / name).write_text(draw(row), encoding="utf-8")
+        row["image"] = {
+            "url": f"images/{name}", "source": "sample", "license": "CC0-1.0",
+            "attribution": "CVerse のサンプル画像（自動生成）",
+        }
+        count += 1
+    return count
+
+
 def main():
     vas, chars, works = {}, {}, {}
     casts, appearances, series = {}, [], []
@@ -380,6 +484,16 @@ def main():
 
     out = pathlib.Path(__file__).resolve().parent.parent / "data" / "sample"
     out.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(out / "images", ignore_errors=True)
+    (out / "images").mkdir()
+    # キャラの sources は作品と共有しているので、image を足す前に写しを取る。
+    chars = {name: dict(row) for name, row in chars.items()}
+    images = (
+        attach_images(out, vas.values(), "va", lambda r: person_svg(r["id"], vivid=False))
+        + attach_images(out, chars.values(), "ch", lambda r: person_svg(r["id"], vivid=True))
+        + attach_images(out, works.values(), "wk", lambda r: poster_svg(r["id"], r["title"]))
+    )
+    print(f"images: {images}")
     files = {
         "voice_actors": list(vas.values()), "characters": list(chars.values()), "works": list(works.values()),
         "casts": list(casts.values()), "appearances": appearances, "series": series,

@@ -36,8 +36,10 @@ export interface NodeBrief {
   label: string;
   /** "more" は「他 N 件」のまとめノード（画面側で足す）。 */
   kind: Kind | "more";
-  /** 検索結果などで添える補足（キャラなら代表作、作品なら年・形態）。 */
+  /** 検索結果などで添える補足（声優なら代表的な役、キャラなら代表作、作品なら年・形態）。 */
   sub?: string;
+  /** 画像の URL（無ければ頭文字のアイコンで表示する）。 */
+  image?: string;
 }
 
 export interface ViewNode extends NodeBrief {
@@ -93,7 +95,10 @@ export interface Meta {
   dataDate: string;
   counts: { voiceActors: number; characters: number; works: number; edges: number };
   shardCount: number;
+  /** 画像つきのノード数。0 なら images.json は無い。 */
+  images?: number;
   featured: string[];
+  featuredWorks?: string[];
 }
 
 /** 絞り込み条件（F-09）。 */
@@ -137,6 +142,9 @@ export function filterArgs(f: Filter): [number, number, number, number, boolean]
   for (const g of FORMAT_GROUPS) {
     if (f.formats.includes(g.key)) for (const c of g.codes) formats |= 1 << c;
   }
+  // 形態はアニメだけを絞る。ゲームを残しているなら形態で落とさず、アニメを外しているなら形態は効かせない。
+  if (!f.anime) formats = 0;
+  else if (formats && f.game) formats |= 1 << 7;
   return [media, formats, f.yearMin ?? 0, f.yearMax ?? 0, f.mainOnly];
 }
 
@@ -146,6 +154,17 @@ export interface Source {
   source: string;
   url: string;
   fetchedAt: string;
+}
+
+/** ノードに添える画像と、その出どころ。画像は再配布せず URL を直接参照する。 */
+export interface ImageInfo {
+  url: string;
+  source?: string;
+  pageUrl?: string;
+  license?: string;
+  attribution?: string;
+  width?: number;
+  height?: number;
 }
 
 export interface WorkRef {
@@ -175,6 +194,7 @@ interface DetailBase {
   anilistId?: number;
   wikipediaTitle?: string;
   sources?: Source[];
+  image?: ImageInfo;
 }
 
 export interface VoiceActorDetail extends DetailBase {

@@ -23,14 +23,22 @@ export interface Placed {
 
 export interface LayoutResult {
   positions: Map<string, Placed>;
-  /** 原点を中心に全ノード（とラベルの余白）が収まる半径。 */
-  extent: number;
+  /** 原点を中心に全ノード（とラベルの余白）が収まる範囲（横・縦それぞれの半分の長さ）。 */
+  extent: { x: number; y: number };
 }
 
-const SIZE = { center: 19, anchor: 14, context: 12, main: 12, ring: 10, more: 8, level2: 6.5, level3: 4.5 };
-const ANCHOR_Y = 135;
-const ANCHOR_DX = 84;
-const SPACING = 34;
+export interface LayoutOptions {
+  /** 縦長の画面（スマホ）向けに、横を詰めて縦に伸ばす。 */
+  portrait?: boolean;
+}
+
+// 画像（顔）が見分けられるよう、1 段目のノードは間隔に対して大きめに取る。
+const SIZE = { center: 32, anchor: 22, context: 18, main: 18, ring: 16, more: 10, level2: 9.5, level3: 5 };
+const ANCHOR_Y = 172;
+const ANCHOR_DX = 116;
+const SPACING = 46;
+/** 外側の輪を内側の輪からどれだけ離すか。 */
+const ROW_GAP = 68;
 const TAU = Math.PI * 2;
 const deg = (d: number) => (d * Math.PI) / 180;
 
@@ -46,7 +54,7 @@ export function nodeSize(n: ViewNode): number {
 
 /** 横一列に並べる（アンカー用）。数が多いときは上下に千鳥にしてラベルの重なりを減らす。 */
 function row(nodes: ViewNode[], y: number, out: Map<string, Placed>) {
-  const stagger = nodes.length > 4 ? 30 : 0;
+  const stagger = nodes.length > 4 ? 40 : 0;
   nodes.forEach((n, i) => {
     const dy = stagger && i % 2 === 1 ? Math.sign(y) * stagger : 0;
     out.set(n.id, { x: (i - (nodes.length - 1) / 2) * ANCHOR_DX, y: y + dy, size: nodeSize(n) });
@@ -63,21 +71,27 @@ function arcRows(
   to: number,
   radius: number,
   out: Map<string, Placed>,
-  { rowGap = 52, spread = false } = {},
+  { rowGap = ROW_GAP, spread = false, phase = 0 } = {},
 ) {
   const span = Math.abs(to - from);
   const dir = Math.sign(to - from) || 1;
   const mid = (from + to) / 2;
   const full = span >= TAU - 1e-6;
   let i = 0;
-  for (let r = radius; i < nodes.length; r += rowGap) {
+  // 輪を重ねるときは、外の輪を半歩ずらす。内と外が同じ角度に並ぶと、中心からの線が
+  // 内側のノードを貫いて「数珠つなぎ」に見えてしまうため。
+  for (let r = radius, line = 0; i < nodes.length; r += rowGap, line++) {
     const capacity = Math.max(1, Math.floor((span * r) / SPACING) + (full ? 0 : 1));
     const count = Math.min(capacity, nodes.length - i);
     // 少ないときに弧いっぱいへ広げすぎない。
     const even = span / Math.max(count - 1, 1);
     const step = full ? TAU / count : spread ? span / count : Math.min(even, (SPACING * 1.6) / r);
+    const shift = ((line + phase) % 2) * 0.5;
     for (let k = 0; k < count; k++, i++) {
-      const a = full ? from + dir * step * k : mid + dir * step * (k - (count - 1) / 2);
+      // 弧いっぱいに広げた輪は、内を 1/4 歩戻し外を 1/4 歩進めて、弧の中に収めたまま半歩ずらす。
+      const a = full
+        ? from + dir * step * (k + shift)
+        : mid + dir * step * (k - (count - 1) / 2 + (spread ? (shift ? 0.25 : -0.25) : 0));
       out.set(nodes[i].id, { x: Math.cos(a) * r, y: Math.sin(a) * r, size: nodeSize(nodes[i]) });
     }
   }
@@ -106,8 +120,8 @@ function characterCenter(nodes: ViewNode[], out: Map<string, Placed>) {
     else for (const m of members) (left.length <= right.length ? left : right).push(m);
   }
   // 下（作品に近い側）から上へ詰める。
-  arcRows(right, deg(-52), deg(52), 200, out);
-  arcRows(left, deg(232), deg(128), 200, out);
+  arcRows(right, deg(-50), deg(50), 244, out);
+  arcRows(left, deg(230), deg(130), 244, out);
 }
 
 /** 声優中心: キャラを円周に、作品ごとの扇形にまとめる。作品はその外側。 */
@@ -119,19 +133,24 @@ function voiceActorCenter(nodes: ViewNode[], out: Map<string, Placed>) {
   const sorted = [...ring].sort(
     (a, b) => (order.get(a.group) ?? works.length) - (order.get(b.group) ?? works.length),
   );
-  const radius = Math.max(150, (sorted.length * SPACING) / TAU);
+  // 多いときは内と外の 2 つの輪に互い違いに置く。1 つの輪に並べると輪が大きくなり、顔が小さくなる。
+  const zigzag = sorted.length > 22;
+  const radius = Math.max(176, (sorted.length * SPACING) / (zigzag ? TAU * 1.75 : TAU));
+  const outerRadius = zigzag ? radius + 50 : radius;
   // 真上から時計回り。
   const step = TAU / Math.max(sorted.length, 1);
   const angles = new Map<string, number[]>();
   sorted.forEach((n, i) => {
     const a = Math.PI / 2 - step * i;
-    out.set(n.id, { x: Math.cos(a) * radius, y: Math.sin(a) * radius, size: nodeSize(n) });
+    const r = zigzag && i % 2 === 1 ? outerRadius : radius;
+    out.set(n.id, { x: Math.cos(a) * r, y: Math.sin(a) * r, size: nodeSize(n) });
     if (n.group) angles.set(n.group, [...(angles.get(n.group) ?? []), a]);
   });
   for (const w of works) {
     const list = angles.get(w.id) ?? [0];
     const a = list.reduce((s, v) => s + v, 0) / list.length;
-    out.set(w.id, { x: Math.cos(a) * (radius + 62), y: Math.sin(a) * (radius + 62), size: nodeSize(w) });
+    const r = outerRadius + 84;
+    out.set(w.id, { x: Math.cos(a) * r, y: Math.sin(a) * r, size: nodeSize(w) });
   }
 }
 
@@ -146,10 +165,29 @@ function workCenter(nodes: ViewNode[], out: Map<string, Placed>) {
   const from = Math.PI / 2 - gap;
   const to = Math.PI / 2 - TAU + gap;
   const span = TAU - gap * 2;
-  const inner = Math.max(125, (mains.length * SPACING) / span);
-  if (tops.length) row(tops, Math.max(ANCHOR_Y, inner + 20), out);
+  const inner = Math.max(164, (mains.length * SPACING) / span);
+  if (tops.length) row(tops, Math.max(ANCHOR_Y, inner + 28), out);
   arcRows(mains, from, to, inner, out, { spread: true });
-  arcRows(others, from, to, mains.length ? inner + 66 : inner, out, { rowGap: 50, spread: true });
+  if (!mains.length) {
+    arcRows(others, from, to, inner, out, { spread: true });
+    return;
+  }
+  // 脇役は、主役と主役のあいだ（すき間の真ん中）の外側に置く。主役と同じ角度に置くと、
+  // 中心からの線が主役を貫いて、脇役が主役にぶら下がっているように見えてしまう。
+  const outerRadius = inner + ROW_GAP + 14;
+  const step = span / mains.length;
+  const slots = mains.map((m) => {
+    const p = out.get(m.id)!;
+    return Math.atan2(p.y, p.x) - step / 2;
+  });
+  if (others.length <= slots.length) {
+    others.forEach((n, i) => {
+      const a = slots[Math.floor(((i + 0.5) * slots.length) / others.length)];
+      out.set(n.id, { x: Math.cos(a) * outerRadius, y: Math.sin(a) * outerRadius, size: nodeSize(n) });
+    });
+  } else {
+    arcRows(others, from, to, outerRadius, out, { spread: true, phase: 1 });
+  }
 }
 
 /** 2 段目以降: 親の外側へ、扇状に開いて置く。 */
@@ -159,11 +197,11 @@ function outer(nodes: ViewNode[], out: Map<string, Placed>) {
     for (const n of nodes) {
       if (n.level === level && n.group) byParent.set(n.group, [...(byParent.get(n.group) ?? []), n]);
     }
-    const dist = level === 2 ? 56 : 34;
+    const dist = level === 2 ? 80 : 42;
     for (const [parent, children] of byParent) {
       const p = out.get(parent) ?? { x: 0, y: 0, size: 0 };
       const base = Math.atan2(p.y, p.x);
-      const spread = Math.min(0.42, 1.5 / children.length);
+      const spread = Math.min(0.46, 1.8 / children.length);
       children.forEach((n, i) => {
         const a = base + (i - (children.length - 1) / 2) * spread;
         out.set(n.id, { x: p.x + Math.cos(a) * dist, y: p.y + Math.sin(a) * dist, size: nodeSize(n) });
@@ -226,40 +264,64 @@ function relax(nodes: ViewNode[], out: Map<string, Placed>, iterations = 50) {
   }
 }
 
-function extentOf(out: Map<string, Placed>): number {
-  let ext = 120;
-  for (const p of out.values()) ext = Math.max(ext, Math.abs(p.x) + p.size, Math.abs(p.y) + p.size);
-  return ext + 46; // ラベルの余白
+function extentOf(out: Map<string, Placed>, portrait = false): { x: number; y: number } {
+  // つながりが無い（少ない）ときに、中心だけが画面いっぱいに拡大されないよう、最小の範囲を決めておく。
+  const ext = { x: 190, y: 170 };
+  for (const p of out.values()) {
+    ext.x = Math.max(ext.x, Math.abs(p.x) + p.size);
+    ext.y = Math.max(ext.y, Math.abs(p.y) + p.size);
+  }
+  // 名前の分の余白。縦長の画面では、上の操作部と下のシートに隠れないよう縦を多めに空ける。
+  return { x: ext.x + 56, y: ext.y + (portrait ? 120 : 48) };
 }
 
-export function layoutView(view: ViewData): LayoutResult {
+/** ノードが少ないときは、顔が見やすいよう 1 段目を大きくする。 */
+function boost(count: number): number {
+  return count <= 8 ? 1.3 : count <= 16 ? 1.15 : 1;
+}
+
+export function layoutView(view: ViewData, { portrait = false }: LayoutOptions = {}): LayoutResult {
   const out = new Map<string, Placed>();
   const center = view.nodes.find((n) => n.slot === Slot.Center);
-  if (!center) return { positions: out, extent: 120 };
+  if (!center) return { positions: out, extent: { x: 120, y: 120 } };
   out.set(center.id, { x: 0, y: 0, size: nodeSize(center) });
   const first = view.nodes.filter((n) => n.level === 1);
   if (center.kind === "ch") characterCenter(first, out);
   else if (center.kind === "va") voiceActorCenter(first, out);
   else workCenter(first, out);
+  const scale = boost(first.length);
+  for (const n of first) {
+    const p = out.get(n.id);
+    if (!p) continue;
+    // 縦長の画面（スマホ）は 1 ノードあたりの画面が小さいので、押しやすいようさらに大きくする。
+    p.size *= scale * (portrait ? 1.18 : 1);
+    if (portrait) {
+      // 縦長の画面では横を詰めて縦に伸ばす。上下に並べたアンカーの列は、名前が重ならないよう横は詰めない。
+      if (n.slot !== Slot.Top && n.slot !== Slot.Bottom) p.x *= 0.76;
+      p.y *= 1.5;
+    }
+  }
   outer(view.nodes, out);
   // 念のため、置き場所が決まらなかったノードも原点付近に出す。
   for (const n of view.nodes) {
     if (!out.has(n.id)) out.set(n.id, { x: 0, y: -60, size: nodeSize(n) });
   }
   relax(view.nodes, out);
-  return { positions: out, extent: extentOf(out) };
+  return { positions: out, extent: extentOf(out, portrait) };
 }
 
 /**
  * 最短経路の表示。左から右へ並べ、声優は上段・キャラは中段・作品は下段に置く
  * （通常画面の「声優は上、作品は下」と同じ約束）。
+ * 縦長の画面では上から下へ並べ、声優は左・キャラは中央・作品は右に置く。
  */
-export function layoutPath(nodes: NodeBrief[]): LayoutResult {
+export function layoutPath(nodes: NodeBrief[], { portrait = false }: LayoutOptions = {}): LayoutResult {
   const out = new Map<string, Placed>();
-  const dx = 92;
-  const yOf = { va: 78, ch: 0, wk: -78, more: 0 } as const;
+  const step = portrait ? 104 : 118;
+  const offset = { va: 92, ch: 0, wk: -92, more: 0 } as const;
   nodes.forEach((n, i) => {
-    out.set(n.id, { x: (i - (nodes.length - 1) / 2) * dx, y: yOf[n.kind], size: 15 });
+    const along = (i - (nodes.length - 1) / 2) * step;
+    out.set(n.id, portrait ? { x: -offset[n.kind], y: -along, size: 24 } : { x: along, y: offset[n.kind], size: 24 });
   });
-  return { positions: out, extent: extentOf(out) };
+  return { positions: out, extent: extentOf(out, portrait) };
 }

@@ -15,6 +15,7 @@ describe("URL と画面状態", () => {
       depth: 2,
       filter: { anime: true, game: false, formats: ["tv", "movie"], yearMin: 2010, yearMax: null, mainOnly: true },
       path: { from: "va:al-1", to: "wk:wp-原神", mode: "weighted" },
+      pathOpen: true,
     };
     const url = serializeRoute(state);
     expect(url).toContain("c=va:al-95185");
@@ -31,6 +32,20 @@ describe("URL と画面状態", () => {
   });
 });
 
+describe("「つながりを調べる」の画面", () => {
+  it("経路が決まる前でも、開いていることを URL に持てる（戻るで閉じられるように）", () => {
+    const open: RouteState = { ...EMPTY_ROUTE, center: "va:1", pathOpen: true };
+    expect(serializeRoute(open)).toBe("?c=va:1&t=path");
+    expect(parseRoute("?c=va:1&t=path")).toEqual(open);
+    expect(parseRoute("?t=path").pathOpen).toBe(true);
+  });
+
+  it("経路があれば、開いているとみなす", () => {
+    expect(parseRoute("?p=va:1~va:2").pathOpen).toBe(true);
+    expect(serializeRoute({ ...EMPTY_ROUTE, path: { from: "va:1", to: "va:2", mode: "bfs" }, pathOpen: true })).toBe("?p=va:1~va:2");
+  });
+});
+
 describe("Rust 側との取り決め", () => {
   it("FNV-1a が Rust 実装と同じ値になる", () => {
     // crates/cverse-cli のテストと同じ期待値
@@ -44,5 +59,8 @@ describe("Rust 側との取り決め", () => {
     expect(
       filterArgs({ anime: true, game: false, formats: ["tv", "game"], yearMin: 2000, yearMax: 2010, mainOnly: true }),
     ).toEqual([1, (1 << 1) | (1 << 2) | (1 << 7), 2000, 2010, true]);
+    // 形態はアニメだけを絞る: ゲームを残していればゲームは落とさない。アニメを外したら形態は無視する。
+    expect(filterArgs({ ...DEFAULT_FILTER, formats: ["tv"] })[1]).toBe((1 << 1) | (1 << 2) | (1 << 7));
+    expect(filterArgs({ ...DEFAULT_FILTER, anime: false, formats: ["tv"] })[1]).toBe(0);
   });
 });

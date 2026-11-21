@@ -131,11 +131,77 @@ describe("作品中心", () => {
     expect([...a.positions]).toEqual([...b.positions]);
     const r = (id: string) => Math.hypot(a.positions.get(id)!.x, a.positions.get(id)!.y);
     expect(r("va:1")).toBeGreaterThan(r("ch:1"));
-    expect(a.extent).toBeGreaterThan(r("va:1"));
+    expect(Math.max(a.extent.x, a.extent.y)).toBeGreaterThan(r("va:1"));
+  });
+});
+
+describe("縦長の画面", () => {
+  const view: ViewData = {
+    center: "ch:c",
+    nodes: [
+      node("ch:c", "ch", Slot.Center),
+      node("va:1", "va", Slot.Top),
+      node("wk:1", "wk", Slot.Bottom),
+      ...Array.from({ length: 20 }, (_, i) => node(`ch:${i}`, "ch", Slot.Ring, { group: "wk:1", role: 1 })),
+    ],
+    edges: [],
+    hidden: [],
+  };
+
+  it("横を詰めて縦に伸ばす。声優は上、作品は下のまま", () => {
+    const wide = layoutView(view);
+    const tall = layoutView(view, { portrait: true });
+    expect(tall.extent.x).toBeLessThan(wide.extent.x);
+    expect(tall.extent.y).toBeGreaterThan(wide.extent.y);
+    expect(tall.positions.get("va:1")!.y).toBeGreaterThan(100);
+    expect(tall.positions.get("wk:1")!.y).toBeLessThan(-100);
+    const list = [...tall.positions.values()];
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        expect(Math.hypot(list[i].x - list[j].x, list[i].y - list[j].y)).toBeGreaterThan(list[i].size + list[j].size);
+      }
+    }
+  });
+});
+
+describe("ノードの大きさ", () => {
+  const ring = (count: number): ViewData => ({
+    center: "va:c",
+    nodes: [
+      node("va:c", "va", Slot.Center),
+      ...Array.from({ length: count }, (_, i) => node(`ch:${i}`, "ch", Slot.Ring, { role: 1 })),
+    ],
+    edges: [],
+    hidden: [],
+  });
+
+  it("ノードが少ないときは 1 段目を大きくする", () => {
+    const few = layoutView(ring(5)).positions.get("ch:0")!.size;
+    const many = layoutView(ring(40)).positions.get("ch:0")!.size;
+    expect(few).toBeGreaterThan(many);
+    noOverlap(ring(5));
+    noOverlap(ring(40));
   });
 });
 
 describe("経路", () => {
+  it("縦長の画面では上から下へ並び、声優は左・作品は右", () => {
+    const { positions, extent } = layoutPath(
+      [
+        { id: "va:1", label: "", kind: "va" },
+        { id: "ch:1", label: "", kind: "ch" },
+        { id: "wk:1", label: "", kind: "wk" },
+        { id: "ch:2", label: "", kind: "ch" },
+        { id: "va:2", label: "", kind: "va" },
+      ],
+      { portrait: true },
+    );
+    const ys = [...positions.values()].map((p) => p.y);
+    expect(ys).toEqual([...ys].sort((a, b) => b - a));
+    expect(positions.get("va:1")!.x).toBeLessThan(positions.get("wk:1")!.x);
+    expect(extent.y).toBeGreaterThan(extent.x);
+  });
+
   it("左から右へ並び、声優は上段・作品は下段", () => {
     const { positions } = layoutPath([
       { id: "va:1", label: "", kind: "va" },

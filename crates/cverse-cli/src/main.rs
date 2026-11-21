@@ -2,7 +2,7 @@
 //!
 //! ```text
 //! cverse-cli validate <source-dir>
-//! cverse-cli build <source-dir> --out <out-dir>
+//! cverse-cli build <source-dir> --out <out-dir> [--images all|licensed|none]
 //! cverse-cli path <data-dir> <id-a> <id-b> [--mode bfs|main|weighted]
 //! cverse-cli bench <data-dir> [--pairs N]
 //! cverse-cli candidates <source-dir>
@@ -22,14 +22,48 @@ use cverse_core::{Filter, Graph, NodeKind};
 const USAGE: &str = "\
 使い方:
   cverse-cli validate <source-dir>                 収集データを検証する
-  cverse-cli build <source-dir> --out <out-dir>    配信データを生成する
+  cverse-cli build <source-dir> --out <out-dir> [--images all|licensed|none]
+                                                   配信データを生成する（--images で載せる画像を選ぶ。
+                                                   licensed は再利用できるライセンスの画像だけ
+                                                   （パブリックドメイン、CC0、クレジット付きの CC BY / BY-SA）、
+                                                   none は画像なし）
   cverse-cli path <data-dir> <id-a> <id-b> [--mode bfs|main|weighted]
                                                    最短経路を表示する
   cverse-cli bench <data-dir> [--pairs N]          片方向 BFS と双方向 BFS を比べる
   cverse-cli candidates <source-dir>               名寄せの候補を JSON で出す";
 
+/// 値を取るオプション。
+const FLAGS: [&str; 4] = ["--out", "--images", "--mode", "--pairs"];
+
+/// 引数を確かめて `--name value` の形にそろえる。`--images=none` も受け付け、知らないオプションや
+/// 値の無いオプションはエラーにする（打ち間違いで画像の方針が既定に戻る、といった事故を防ぐ）。
+fn normalize_args(raw: Vec<String>) -> Result<Vec<String>> {
+    let mut args = Vec::with_capacity(raw.len());
+    let mut iter = raw.into_iter();
+    while let Some(arg) = iter.next() {
+        if !arg.starts_with("--") {
+            args.push(arg);
+            continue;
+        }
+        let (name, inline) = match arg.split_once('=') {
+            Some((name, value)) => (name.to_string(), Some(value.to_string())),
+            None => (arg, None),
+        };
+        if !FLAGS.contains(&name.as_str()) {
+            bail!("知らないオプションです: {name}\n\n{USAGE}");
+        }
+        let value = match inline.or_else(|| iter.next()) {
+            Some(value) if !value.is_empty() && !value.starts_with("--") => value,
+            _ => bail!("{name} には値が必要です"),
+        };
+        args.push(name);
+        args.push(value);
+    }
+    Ok(args)
+}
+
 fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args = normalize_args(std::env::args().skip(1).collect())?;
     let flag = |name: &str| {
         args.iter()
             .position(|a| a == name)
@@ -46,12 +80,13 @@ fn main() -> Result<()> {
                 bail!("検証に失敗しました");
             }
             println!(
-                "OK: 声優 {} / キャラ {} / 作品 {} / 配役 {} / 登場 {}",
+                "OK: 声優 {} / キャラ {} / 作品 {} / 配役 {} / 登場 {} / 画像 {}",
                 ds.voice_actors.len(),
                 ds.characters.len(),
                 ds.works.len(),
                 ds.casts.len(),
-                ds.appearances.len()
+                ds.appearances.len(),
+                ds.image_count()
             );
         }
         (Some("build"), Some(dir)) => {
@@ -62,13 +97,19 @@ fn main() -> Result<()> {
             if !report.errors.is_empty() {
                 bail!("検証に失敗したため生成を中止しました");
             }
+            let policy = flag("--images").unwrap_or("all");
+            let policy = model::ImagePolicy::parse(policy).with_context(|| {
+                format!("--images は all / licensed / none のいずれかです: {policy}")
+            })?;
+            ds.apply_image_policy(policy);
             let built = build::build(&ds);
             std::fs::create_dir_all(&out)?;
-            build::write(&built, &out, &today())?;
+            build::write(&built, Path::new(dir), &out, &today())?;
             println!(
-                "生成: {} ノード / {} エッジ / graph.bin {} KB → {}",
+                "生成: {} ノード / {} エッジ / 画像 {} 件 / graph.bin {} KB → {}",
                 built.graph.node_count(),
                 built.graph.edge_count(),
+                ds.image_count(),
                 built.graph.to_bytes().len() / 1024,
                 out.display()
             );
@@ -221,4 +262,26 @@ fn today() -> String {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
     format!("{y:04}-{m:02}-{d:02}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_args;
+
+    fn run(args: &[&str]) -> Result<Vec<String>, String> {
+        normalize_args(args.iter().map(|a| a.to_string()).collect()).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn options_are_checked_strictly() {
+        assert_eq!(
+            run(&["build", "data", "--out", "o", "--images=none"]).unwrap(),
+            ["build", "data", "--out", "o", "--images", "none"]
+        );
+        // 打ち間違いや値の付け忘れを、黙って既定の動きにしない。
+        assert!(run(&["build", "data", "--out", "o", "--image", "none"]).is_err());
+        assert!(run(&["build", "data", "--out", "o", "--images"]).is_err());
+        assert!(run(&["build", "data", "--images", "--out", "o"]).is_err());
+        assert!(run(&["build", "data", "--out="]).is_err());
+    }
 }
