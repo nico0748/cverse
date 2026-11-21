@@ -1,7 +1,7 @@
 //! 収集データ（`data/source/*.json`）の型と読み込み・検証。形式は docs/data-schema.md を参照。
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use cverse_core::Format;
@@ -13,6 +13,68 @@ pub struct Source {
     pub source: String,
     pub url: String,
     pub fetched_at: String,
+}
+
+/// ノードに添える画像。サイトは画像を再配布せず、`url` を直接参照するだけにする。
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Image {
+    /// `https://` で始まる URL か、データのディレクトリからの相対パス。
+    pub url: String,
+    pub source: Option<String>,
+    pub page_url: Option<String>,
+    /// ライセンス表記（`CC BY-SA 4.0` など）。権利者の著作物で許諾が無いものは `null`。
+    pub license: Option<String>,
+    pub attribution: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
+/// 画像をどこまで配信データに含めるか。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImagePolicy {
+    /// すべて含める。
+    All,
+    /// `license` があるもの（Wikimedia Commons など）だけ含める。
+    Licensed,
+    /// 含めない（頭文字のアイコンだけで表示する）。
+    None,
+}
+
+impl ImagePolicy {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "all" => Some(Self::All),
+            "licensed" => Some(Self::Licensed),
+            "none" => Some(Self::None),
+            _ => None,
+        }
+    }
+}
+
+/// `image` は URL 文字列だけでも、オブジェクトでも受け付ける。
+fn image_field<'de, D>(d: D) -> Result<Option<Image>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Either {
+        Url(String),
+        Full(Image),
+    }
+    Ok(Option::<Either>::deserialize(d)?.map(|e| match e {
+        Either::Full(image) => image,
+        Either::Url(url) => Image {
+            url,
+            source: None,
+            page_url: None,
+            license: None,
+            attribution: None,
+            width: None,
+            height: None,
+        },
+    }))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -30,6 +92,8 @@ pub struct VoiceActor {
     pub wikipedia_title: Option<String>,
     pub wikidata_id: Option<String>,
     pub favourites: Option<u32>,
+    #[serde(default, deserialize_with = "image_field")]
+    pub image: Option<Image>,
     #[serde(default, deserialize_with = "null_as_default")]
     pub sources: Vec<Source>,
 }
@@ -46,6 +110,8 @@ pub struct Character {
     pub anilist_id: Option<u64>,
     pub wikipedia_title: Option<String>,
     pub favourites: Option<u32>,
+    #[serde(default, deserialize_with = "image_field")]
+    pub image: Option<Image>,
     #[serde(default, deserialize_with = "null_as_default")]
     pub sources: Vec<Source>,
 }
@@ -63,6 +129,8 @@ pub struct Work {
     pub anilist_id: Option<u64>,
     pub wikipedia_title: Option<String>,
     pub popularity: Option<u32>,
+    #[serde(default, deserialize_with = "image_field")]
+    pub image: Option<Image>,
     #[serde(default, deserialize_with = "null_as_default")]
     pub sources: Vec<Source>,
 }
@@ -115,6 +183,8 @@ where
 
 #[derive(Debug, Default)]
 pub struct Dataset {
+    /// 読み込み元のディレクトリ（相対パスの画像を探す基準）。
+    pub root: PathBuf,
     pub voice_actors: Vec<VoiceActor>,
     pub characters: Vec<Character>,
     pub works: Vec<Work>,
@@ -140,6 +210,7 @@ fn read<T: for<'de> Deserialize<'de>>(dir: &Path, name: &str, required: bool) ->
 impl Dataset {
     pub fn load(dir: &Path) -> Result<Self> {
         Ok(Self {
+            root: dir.to_owned(),
             voice_actors: read(dir, "voice_actors.json", true)?,
             characters: read(dir, "characters.json", true)?,
             works: read(dir, "works.json", true)?,
@@ -191,6 +262,32 @@ impl Dataset {
                 r.errors
                     .push(format!("{}: format `{}` は不正です", w.id, w.format));
             }
+        }
+
+        // 画像: 表示できない URL は警告して外す（ノード自体は残す）。
+        let root = self.root.clone();
+        let check_image = |r: &mut Report, id: &str, image: &mut Option<Image>| {
+            let Some(img) = image else { return };
+            if let Err(why) = check_image_url(&root, &img.url) {
+                r.warnings
+                    .push(format!("{id}: image を外しました（{why}）"));
+                *image = None;
+                return;
+            }
+            if img.license.is_some() && img.attribution.is_none() && img.page_url.is_none() {
+                r.warnings.push(format!(
+                    "{id}: image に license がありますが attribution も pageUrl もありません"
+                ));
+            }
+        };
+        for v in &mut self.voice_actors {
+            check_image(&mut r, &v.id, &mut v.image);
+        }
+        for c in &mut self.characters {
+            check_image(&mut r, &c.id, &mut c.image);
+        }
+        for w in &mut self.works {
+            check_image(&mut r, &w.id, &mut w.image);
         }
 
         let kind_of: HashMap<&str, char> = self
@@ -256,6 +353,64 @@ impl Dataset {
         r.isolated = kind_of.keys().filter(|id| !linked.contains(**id)).count();
         r
     }
+
+    /// 方針に合わない画像を外す。
+    pub fn apply_image_policy(&mut self, policy: ImagePolicy) {
+        let keep = |image: &Option<Image>| match policy {
+            ImagePolicy::All => true,
+            ImagePolicy::Licensed => image.as_ref().is_some_and(|i| i.license.is_some()),
+            ImagePolicy::None => false,
+        };
+        for image in self
+            .voice_actors
+            .iter_mut()
+            .map(|v| &mut v.image)
+            .chain(self.characters.iter_mut().map(|c| &mut c.image))
+            .chain(self.works.iter_mut().map(|w| &mut w.image))
+        {
+            if !keep(image) {
+                *image = None;
+            }
+        }
+    }
+
+    pub fn image_count(&self) -> usize {
+        self.voice_actors
+            .iter()
+            .filter(|v| v.image.is_some())
+            .count()
+            + self.characters.iter().filter(|c| c.image.is_some()).count()
+            + self.works.iter().filter(|w| w.image.is_some()).count()
+    }
+}
+
+/// 画像 URL が `https://`（外部を直接参照）か、`root` 配下に実在する相対パスかを確かめる。
+pub fn is_remote(url: &str) -> bool {
+    url.starts_with("https://")
+}
+
+fn check_image_url(root: &Path, url: &str) -> Result<(), String> {
+    if is_remote(url) {
+        return if url.len() > "https://".len() && !url.contains(char::is_whitespace) {
+            Ok(())
+        } else {
+            Err("URL が不正です".into())
+        };
+    }
+    if url.contains("://") || url.starts_with("//") || url.starts_with("data:") {
+        return Err("https:// 以外の URL は使えません".into());
+    }
+    let rel = Path::new(url);
+    let inside = rel
+        .components()
+        .all(|c| matches!(c, std::path::Component::Normal(_)));
+    if url.is_empty() || !inside {
+        return Err("相対パスはデータのディレクトリ配下に限ります".into());
+    }
+    if !root.join(rel).is_file() {
+        return Err(format!("{url} がありません"));
+    }
+    Ok(())
 }
 
 const MAX_LISTED: usize = 200;
@@ -294,5 +449,94 @@ impl Report {
             self.warnings.len(),
             self.isolated
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn actor(image: &str) -> VoiceActor {
+        serde_json::from_str(&format!(
+            r#"{{"id":"va:1","name":"テスト","image":{image},
+                "sources":[{{"source":"manual","url":"https://example.com","fetchedAt":"2026-11-21"}}]}}"#
+        ))
+        .unwrap()
+    }
+
+    fn dataset(images: &[&str]) -> Dataset {
+        Dataset {
+            voice_actors: images
+                .iter()
+                .enumerate()
+                .map(|(i, image)| VoiceActor {
+                    id: format!("va:{i}"),
+                    ..actor(image)
+                })
+                .collect(),
+            ..Dataset::default()
+        }
+    }
+
+    #[test]
+    fn image_accepts_a_url_string_or_an_object() {
+        assert_eq!(
+            actor(r#""https://img.example/a.png""#).image.unwrap().url,
+            "https://img.example/a.png"
+        );
+        let full = actor(
+            r#"{"url":"https://img.example/a.png","source":"wikimedia-commons",
+                "pageUrl":"https://commons.example/File:a.png","license":"CC BY-SA 4.0",
+                "attribution":"Someone","unknownField":1}"#,
+        )
+        .image
+        .unwrap();
+        assert_eq!(full.license.as_deref(), Some("CC BY-SA 4.0"));
+        assert_eq!(
+            full.page_url.as_deref(),
+            Some("https://commons.example/File:a.png")
+        );
+        assert!(actor("null").image.is_none());
+    }
+
+    #[test]
+    fn images_that_cannot_be_shown_are_dropped_with_a_warning() {
+        let mut ds = dataset(&[
+            r#""https://img.example/a.png""#,
+            r#""http://img.example/a.png""#,
+            r#""../outside.png""#,
+            r#""missing/file.png""#,
+            r#""data:image/png;base64,AAAA""#,
+        ]);
+        let report = ds.validate();
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        let kept: Vec<bool> = ds.voice_actors.iter().map(|v| v.image.is_some()).collect();
+        assert_eq!(kept, [true, false, false, false, false]);
+        assert_eq!(
+            report
+                .warnings
+                .iter()
+                .filter(|w| w.contains("image"))
+                .count(),
+            4
+        );
+    }
+
+    #[test]
+    fn image_policy_keeps_only_what_it_allows() {
+        let licensed =
+            r#"{"url":"https://img.example/b.png","license":"CC0","pageUrl":"https://x.example"}"#;
+        let plain = r#""https://img.example/a.png""#;
+        for (policy, expected) in [
+            (ImagePolicy::All, 2),
+            (ImagePolicy::Licensed, 1),
+            (ImagePolicy::None, 0),
+        ] {
+            let mut ds = dataset(&[plain, licensed]);
+            ds.apply_image_policy(policy);
+            assert_eq!(ds.image_count(), expected);
+        }
+        assert_eq!(ImagePolicy::parse("licensed"), Some(ImagePolicy::Licensed));
+        assert_eq!(ImagePolicy::parse("some"), None);
     }
 }

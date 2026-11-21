@@ -12,6 +12,9 @@ export function fnv1a(s: string): number {
 
 export const dataUrl = (path: string) => `${import.meta.env.BASE_URL}data/${path}`;
 
+/** 画像の URL。データに同梱された画像（相対パス）は、データの置き場所から解決する。 */
+export const imageUrl = (url: string) => (url.startsWith("https://") ? url : dataUrl(url));
+
 const shards = new Map<number, Promise<Record<string, Detail>>>();
 
 /** 詳細パネル用のデータを、必要なシャードだけ読んで返す。 */

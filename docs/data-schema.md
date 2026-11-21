@@ -35,6 +35,37 @@ data/source/
 `source` は `anilist` | `wikipedia` | `wikidata` | `manual`。`url` と `fetchedAt`(YYYY-MM-DD) は必須。
 ノード 3 種は `sources` 必須（1 件以上）。エッジは任意。
 
+## 共通: image（任意）
+
+VoiceActor / Character / Work は、画像を 1 枚持てる（Work はキービジュアルやカバー）。
+
+```json
+"image": {
+  "url": "https://s4.anilist.co/file/anilistcdn/character/large/b36765-xxxx.png",
+  "source": "anilist",
+  "pageUrl": "https://anilist.co/character/36765",
+  "license": null,
+  "attribution": null
+}
+```
+
+| フィールド | 型 | 必須 | 説明 |
+|---|---|---|---|
+| url | string | ✓ | そのまま表示できる画像の URL。`https://` のみ。データのディレクトリからの相対パス（同梱画像）も可 |
+| source | string | 推奨 | `anilist` \| `wikimedia-commons` \| `wikidata` \| `official` など |
+| pageUrl | string | 推奨 | 画像の掲載元ページ（AniList の該当ページ、Commons の `File:` ページなど）。`https://` のみ |
+| license | string \| null | | ライセンス表記（`CC BY-SA 4.0` など）。権利者の著作物で許諾が無いものは `null` |
+| attribution | string \| null | | 作者名やクレジット。不明なら `null` |
+| width / height | number | | 元画像の大きさ（分かれば） |
+
+- サイトは画像を**再配布しない**。`url` を直接参照して表示するだけで、出典とクレジットを詳細パネルに出す
+- 小さめの画像で足りる（AniList なら `large` か `medium`）。グラフ上では 30〜100px 程度、詳細でも 100px 程度で使う
+- 人物の画像は縦長で顔が上寄りにある前提で、上から少し下を正方形に切り抜く
+- `image` は URL の文字列だけでも受け付ける（`"image": "https://…"`）
+- 表示できない URL（`http://`、`data:`、実在しない相対パスなど）は検証時に警告して、その画像だけ外す
+- 画像が無いノードは、頭文字のアイコンで表示する
+- ビルド時に `--images all|licensed|none` で載せる範囲を選べる。`licensed` は `license` があるものだけ、`none` は画像なし
+
 ## VoiceActor
 
 | フィールド | 型 | 必須 | 内容 |
@@ -50,6 +81,7 @@ data/source/
 | wikipediaTitle | string | | 日本語版 Wikipedia の記事名 |
 | wikidataId | string | | 例 `Q49582` |
 | favourites | number | | AniList お気に入り数。並び順と「上位だけ描く」ときの優先度に使う |
+| image | Image | | 人物の写真。上の「共通: image」を参照 |
 | sources | Source[] | ✓ | |
 
 ## Character
@@ -64,6 +96,7 @@ data/source/
 | anilistId | number | | |
 | wikipediaTitle | string | | 単独記事がある場合のみ |
 | favourites | number | | AniList お気に入り数。無ければ登場作品の人気から算出する |
+| image | Image | | キャラの絵 |
 | sources | Source[] | ✓ | |
 
 同じキャラを複数の声優が演じた場合もキャラは 1 件にまとめ、Cast を複数張る。
@@ -82,6 +115,7 @@ data/source/
 | anilistId | number | | |
 | wikipediaTitle | string | | |
 | popularity | number | | AniList popularity など。大量ノード時の優先度に使う |
+| image | Image | | キービジュアル・カバー |
 | sources | Source[] | ✓ | |
 
 ## Cast（声優–キャラ）

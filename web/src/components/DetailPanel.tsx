@@ -1,23 +1,30 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { loadDetail } from "../lib/shard";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useBriefs } from "../lib/hooks";
+import { imageUrl, loadDetail } from "../lib/shard";
 import {
   FORMAT_LABEL,
   KIND_LABEL,
   ROLE_LABEL,
   type CastRef,
   type Detail,
+  type ImageInfo,
   type Kind,
   type Meta,
   type WorkRef,
 } from "../lib/types";
+import { Icon } from "./Icon";
 import { KindIcon } from "./KindIcon";
+import { Thumb } from "./Thumb";
 
 const REPO = "https://github.com/nico0748/cverse";
 const SOURCE_LABEL: Record<string, string> = {
   anilist: "AniList",
   wikipedia: "Wikipedia",
   wikidata: "Wikidata",
+  "wikimedia-commons": "Wikimedia Commons",
+  official: "公式サイト",
   manual: "手入力",
+  sample: "サンプル",
 };
 const ANILIST_PATH: Record<Kind, string> = { va: "staff", ch: "character", wk: "anime" };
 const MEDIUM_LABEL: Record<string, string> = { anime: "アニメ", game: "ゲーム" };
@@ -33,6 +40,8 @@ const RELATION_LABEL: Record<string, string> = {
   ALTERNATIVE: "別版",
   OTHER: "関連",
 };
+/** 長い一覧は、まずこの件数だけ出す。 */
+const PAGE = 24;
 
 interface Props {
   meta: Meta;
@@ -40,16 +49,8 @@ interface Props {
   onNavigate: (id: string) => void;
   isFavorite: boolean;
   onToggleFavorite: () => void;
-}
-
-/** 一覧の項目。押すとそのノードが中心になる。 */
-function Go({ id, kind, onNavigate, children }: { id: string; kind: Kind; onNavigate: (id: string) => void; children: ReactNode }) {
-  return (
-    <button type="button" className="go" onClick={() => onNavigate(id)}>
-      <KindIcon kind={kind} size={10} />
-      <span>{children}</span>
-    </button>
-  );
+  /** このノードを始点にして、つながり（最短経路）を調べる。 */
+  onStartPath: () => void;
 }
 
 const workMeta = (w: WorkRef) => [w.year, w.format && (FORMAT_LABEL[w.format] ?? w.format)].filter(Boolean).join("・");
@@ -60,9 +61,7 @@ function period(p: CastRef["period"]) {
 }
 
 function castNote(c: CastRef) {
-  return [c.medium && MEDIUM_LABEL[c.medium], c.kind && (KIND_NOTE[c.kind] ?? c.kind), period(c.period)]
-    .filter(Boolean)
-    .join("・");
+  return [c.medium && MEDIUM_LABEL[c.medium], c.kind && (KIND_NOTE[c.kind] ?? c.kind), period(c.period)].filter(Boolean).join("・");
 }
 
 function issueUrl(d: Detail) {
@@ -81,10 +80,85 @@ function issueUrl(d: Detail) {
   return `${REPO}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
 }
 
+/** 詳細に出てくる相手の ID をすべて集める（小さな画像を引くため）。 */
+function refIds(d: Detail): string[] {
+  if (d.kind === "va") return (d.roles ?? []).flatMap((r) => [r.id, ...(r.works ?? []).slice(0, 1).map((w) => w.id)]);
+  if (d.kind === "ch") return [...(d.voicedBy ?? []), ...(d.works ?? []), ...(d.relations ?? [])].map((r) => r.id);
+  return [...(d.related ?? []).map((w) => w.id), ...(d.cast ?? []).flatMap((c) => [c.id, ...(c.vas ?? []).map((v) => v.id)])];
+}
+
+/** 見出しと件数つきの一覧。長いときは絞り込みと「もっと見る」を付ける。 */
+function ListSection<T>({
+  title,
+  items,
+  text,
+  children,
+  empty,
+  className = "rows",
+}: {
+  title: string;
+  items: T[];
+  /** 絞り込みの対象にする文字列。 */
+  text: (item: T) => string;
+  children: (item: T, index: number) => ReactNode;
+  empty?: string;
+  className?: string;
+}) {
+  const [query, setQuery] = useState("");
+  const [limit, setLimit] = useState(PAGE);
+  const q = query.trim().toLowerCase();
+  const filtered = q ? items.filter((it) => text(it).toLowerCase().includes(q)) : items;
+  const shown = filtered.slice(0, limit);
+  return (
+    <section>
+      <div className="section-head">
+        <h3>
+          {title}
+          {items.length > 0 && <span className="count">{items.length}</span>}
+        </h3>
+        {items.length > 12 && (
+          <input
+            className="mini-filter"
+            type="search"
+            aria-label={`${title}を絞り込む`}
+            placeholder="絞り込む"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setLimit(PAGE);
+            }}
+          />
+        )}
+      </div>
+      {items.length === 0 && <p className="empty">{empty ?? "データがありません。"}</p>}
+      {items.length > 0 && filtered.length === 0 && <p className="empty">「{query.trim()}」を含むものはありません。</p>}
+      <ul className={className}>{shown.map(children)}</ul>
+      {filtered.length > limit && (
+        <button type="button" className="more-button" onClick={() => setLimit(limit + PAGE * 2)}>
+          残り {filtered.length - limit} 件を表示
+        </button>
+      )}
+    </section>
+  );
+}
+
+function ImageCredit({ image }: { image: ImageInfo }) {
+  const source = image.source ? (SOURCE_LABEL[image.source] ?? image.source) : "出典";
+  return (
+    <p className="detail__credit">
+      画像: {image.pageUrl ? <a href={image.pageUrl} target="_blank" rel="noreferrer">{source}</a> : source}
+      {image.attribution && `（${image.attribution}）`}
+      {image.license && `・${image.license}`}
+    </p>
+  );
+}
+
 /** 詳細パネル（F-07）。出演一覧・外部リンク・出典・取得日。一覧から中心を切り替えられる。 */
-export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite }: Props) {
+export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite, onStartPath }: Props) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "missing" | "error">("loading");
+  const [attempt, setAttempt] = useState(0);
+  const [shared, setShared] = useState(false);
 
   useEffect(() => {
     let stale = false;
@@ -100,11 +174,33 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
     return () => {
       stale = true;
     };
-  }, [meta, id]);
+  }, [meta, id, attempt]);
 
-  if (state === "error") return <p className="panel__msg">詳細を読み込めませんでした。通信状況を確認して、もう一度お試しください。</p>;
+  const ids = useMemo(() => (detail && detail.id === id ? refIds(detail) : []), [detail, id]);
+  const briefs = useBriefs(ids);
+  const image = (ref: string) => briefs.get(ref)?.image;
+
+  if (state === "error") {
+    return (
+      <div className="panel__msg" role="alert">
+        <p>詳細を読み込めませんでした。通信状況を確認してください。</p>
+        <button type="button" className="button" onClick={() => setAttempt((n) => n + 1)}>
+          もう一度読み込む
+        </button>
+      </div>
+    );
+  }
   if (state === "missing") return <p className="panel__msg">このノードの詳細データがありません。</p>;
-  if (!detail || detail.id !== id) return <p className="panel__msg">読み込み中…</p>;
+  if (!detail || detail.id !== id) {
+    return (
+      <div className="skeleton" role="status" aria-label="読み込み中">
+        <div className="skeleton__head" />
+        <div className="skeleton__line" />
+        <div className="skeleton__line" />
+        <div className="skeleton__line" />
+      </div>
+    );
+  }
 
   const d = detail;
   const facts: string[] = [];
@@ -114,146 +210,164 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
   } else if (d.kind === "wk") {
     if (d.format) facts.push(FORMAT_LABEL[d.format] ?? d.format);
     if (d.year) facts.push(`${d.year} 年`);
-    if (d.series && d.series !== d.name) facts.push(`${d.series} シリーズ`);
+    if (d.series && d.series !== d.name) facts.push(d.series.endsWith("シリーズ") ? d.series : `${d.series} シリーズ`);
   }
   const hasWikipedia = d.sources?.some((s) => s.source === "wikipedia");
 
+  const go = (ref: { id: string; name: string }, kind: Kind, note?: string, opts: { poster?: boolean; right?: boolean } = {}) => (
+    <button type="button" className={`go${opts.right ? " go--right" : ""}`} onClick={() => onNavigate(ref.id)}>
+      <Thumb kind={kind} src={image(ref.id)} label={ref.name} size={32} poster={opts.poster} />
+      <span className="go__text">
+        <span className="go__name">{ref.name}</span>
+        {note && <small>{note}</small>}
+      </span>
+    </button>
+  );
+
+  const share = async () => {
+    const data = { title: `${d.name} — CVerse`, url: location.href };
+    try {
+      // スマホでは共有シート、それ以外は URL をコピーする。
+      if (navigator.share && matchMedia("(pointer: coarse)").matches) await navigator.share(data);
+      else {
+        await navigator.clipboard.writeText(data.url);
+        setShared(true);
+        setTimeout(() => setShared(false), 1800);
+      }
+    } catch {
+      setShared(false);
+    }
+  };
+
   return (
     <article className="detail">
-      <header className="detail__head">
-        <p className="detail__kind">
-          <KindIcon kind={d.kind} />
-          {KIND_LABEL[d.kind]}
-        </p>
-        <h2>{d.name}</h2>
-        {(d.reading || d.nameEn) && <p className="detail__reading">{[d.reading, d.nameEn].filter(Boolean).join(" / ")}</p>}
-        {facts.length > 0 && <p className="detail__facts">{facts.join("・")}</p>}
-        {d.aliases && d.aliases.length > 0 && <p className="detail__facts">別名: {d.aliases.join("、")}</p>}
-        <div className="detail__actions">
-          <button type="button" className={`chip${isFavorite ? " is-on" : ""}`} aria-pressed={isFavorite} onClick={onToggleFavorite}>
-            {isFavorite ? "★ お気に入り" : "☆ お気に入り"}
-          </button>
+      <header className={`detail__head detail__head--${d.kind}`}>
+        <Thumb kind={d.kind} src={d.image && imageUrl(d.image.url)} label={d.name} size={d.kind === "wk" ? 84 : 96} poster={d.kind === "wk"} eager />
+        <div className="detail__title">
+          <p className="detail__kind">
+            <KindIcon kind={d.kind} />
+            {KIND_LABEL[d.kind]}
+          </p>
+          <h2>
+            {d.reading ? (
+              <ruby>
+                {d.name}
+                <rp>（</rp>
+                <rt>{d.reading}</rt>
+                <rp>）</rp>
+              </ruby>
+            ) : (
+              d.name
+            )}
+          </h2>
+          {d.nameEn && <p className="detail__en" lang="en">{d.nameEn}</p>}
+          {facts.length > 0 && <p className="detail__facts">{facts.join("・")}</p>}
+          {d.aliases && d.aliases.length > 0 && <p className="detail__facts">別名: {d.aliases.join("、")}</p>}
+        </div>
+      </header>
+      {d.image && <ImageCredit image={d.image} />}
+
+      <div className="detail__actions">
+        <button type="button" className={`button${isFavorite ? " is-on" : ""}`} aria-pressed={isFavorite} onClick={onToggleFavorite}>
+          <Icon name="star" filled={isFavorite} />
+          {isFavorite ? "お気に入り済み" : "お気に入り"}
+        </button>
+        <button type="button" className="button" onClick={onStartPath}>
+          <Icon name="route" />
+          つながりを調べる
+        </button>
+        <button type="button" className="button" onClick={share}>
+          <Icon name={shared ? "check" : "share"} />
+          <span aria-live="polite">{shared ? "URL をコピーしました" : "共有"}</span>
+        </button>
+      </div>
+      {(d.wikipediaTitle || d.anilistId != null) && (
+        <p className="detail__links">
           {d.wikipediaTitle && (
-            <a className="chip" href={`https://ja.wikipedia.org/wiki/${encodeURIComponent(d.wikipediaTitle)}`} target="_blank" rel="noreferrer">
-              Wikipedia ↗
+            <a href={`https://ja.wikipedia.org/wiki/${encodeURIComponent(d.wikipediaTitle)}`} target="_blank" rel="noreferrer">
+              Wikipedia
+              <Icon name="external" size={12} />
             </a>
           )}
           {d.anilistId != null && (
-            <a className="chip" href={`https://anilist.co/${ANILIST_PATH[d.kind]}/${d.anilistId}`} target="_blank" rel="noreferrer">
-              AniList ↗
+            <a href={`https://anilist.co/${ANILIST_PATH[d.kind]}/${d.anilistId}`} target="_blank" rel="noreferrer">
+              AniList
+              <Icon name="external" size={12} />
             </a>
           )}
-        </div>
-      </header>
+        </p>
+      )}
 
       {d.kind === "va" && (
-        <section>
-          <h3>出演 <span className="count">{d.roles?.length ?? 0}</span></h3>
-          <ul className="rows">
-            {d.roles?.map((r) => (
+        <ListSection
+          title="演じたキャラ"
+          items={d.roles ?? []}
+          text={(r) => `${r.name} ${(r.works ?? []).map((w) => w.name).join(" ")}`}
+          className="cast"
+          empty="出演の記録がありません。"
+        >
+          {(r) => {
+            const work = r.works?.[0];
+            const rest = (r.works?.length ?? 0) - 1;
+            return (
               <li key={r.id}>
-                <Go id={r.id} kind="ch" onNavigate={onNavigate}>{r.name}</Go>
-                <div className="rows__sub">
-                  {r.works?.slice(0, 3).map((w) => (
-                    <Go key={w.id} id={w.id} kind="wk" onNavigate={onNavigate}>
-                      {w.name}
-                      <small>{[workMeta(w), w.role && ROLE_LABEL[w.role]].filter(Boolean).join("・")}</small>
-                    </Go>
-                  ))}
-                  {(r.works?.length ?? 0) > 3 && <small className="muted">ほか {r.works!.length - 3} 作品</small>}
-                  {r.kind && <small className="muted">{KIND_NOTE[r.kind] ?? r.kind}</small>}
-                </div>
+                {go(r, "ch", [r.kind && (KIND_NOTE[r.kind] ?? r.kind), work?.role && ROLE_LABEL[work.role]].filter(Boolean).join("・"))}
+                <span className="cast__dots" aria-hidden="true" />
+                {work && go(work, "wk", [workMeta(work), rest > 0 && `ほか ${rest} 作品`].filter(Boolean).join("・"), { right: true })}
               </li>
-            ))}
-          </ul>
-        </section>
+            );
+          }}
+        </ListSection>
       )}
 
       {d.kind === "ch" && (
         <>
-          <section>
-            <h3>担当声優</h3>
-            <ul className="rows">
-              {d.voicedBy?.map((c, i) => (
-                <li key={`${c.id}-${i}`}>
-                  <Go id={c.id} kind="va" onNavigate={onNavigate}>
-                    {c.name}
-                    <small>{castNote(c)}</small>
-                  </Go>
-                </li>
-              ))}
-              {!d.voicedBy?.length && <li className="muted">データなし</li>}
-            </ul>
-          </section>
-          <section>
-            <h3>登場作品 <span className="count">{d.works?.length ?? 0}</span></h3>
-            <ul className="rows">
-              {d.works?.map((w) => (
-                <li key={w.id}>
-                  <Go id={w.id} kind="wk" onNavigate={onNavigate}>
-                    {w.name}
-                    <small>{[workMeta(w), w.role && ROLE_LABEL[w.role]].filter(Boolean).join("・")}</small>
-                  </Go>
-                </li>
-              ))}
-            </ul>
-          </section>
+          <ListSection title="担当声優" items={d.voicedBy ?? []} text={(c) => c.name} empty="声優の記録がありません。">
+            {(c, i) => <li key={`${c.id}-${i}`}>{go(c, "va", castNote(c))}</li>}
+          </ListSection>
+          <ListSection title="登場作品" items={d.works ?? []} text={(w) => w.name}>
+            {(w) => <li key={w.id}>{go(w, "wk", [workMeta(w), w.role && ROLE_LABEL[w.role]].filter(Boolean).join("・"))}</li>}
+          </ListSection>
           {d.relations && d.relations.length > 0 && (
-            <section>
-              <h3>関係</h3>
-              <ul className="rows">
-                {d.relations.map((r) => (
-                  <li key={r.id}>
-                    <Go id={r.id} kind="ch" onNavigate={onNavigate}>
-                      {r.name}
-                      <small>{r.label}</small>
-                    </Go>
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <ListSection title="関係のあるキャラ" items={d.relations} text={(r) => r.name}>
+              {(r) => <li key={r.id}>{go(r, "ch", r.label)}</li>}
+            </ListSection>
           )}
         </>
       )}
 
       {d.kind === "wk" && (
         <>
+          <ListSection
+            title="キャスト"
+            items={d.cast ?? []}
+            text={(c) => `${c.name} ${(c.vas ?? []).map((v) => v.name).join(" ")}`}
+            className="cast"
+            empty="キャストの記録がありません。"
+          >
+            {(c) => (
+              <li key={c.id}>
+                {go(c, "ch", ROLE_LABEL[c.role])}
+                <span className="cast__dots" aria-hidden="true" />
+                <span className="cast__side">
+                  {c.vas?.map((v, i) => (
+                    <span key={`${v.id}-${i}`}>
+                      {go(v, "va", [v.kind && (KIND_NOTE[v.kind] ?? v.kind), period(v.period)].filter(Boolean).join("・"), { right: true })}
+                    </span>
+                  ))}
+                </span>
+              </li>
+            )}
+          </ListSection>
           {d.related && d.related.length > 0 && (
-            <section>
-              <h3>シリーズ</h3>
-              <ul className="rows">
-                {d.related.map((w) => (
-                  <li key={w.id}>
-                    <Go id={w.id} kind="wk" onNavigate={onNavigate}>
-                      {w.name}
-                      <small>{[w.relation && (RELATION_LABEL[w.relation] ?? w.relation), workMeta(w)].filter(Boolean).join("・")}</small>
-                    </Go>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          <section>
-            <h3>キャスト <span className="count">{d.cast?.length ?? 0}</span></h3>
-            <ul className="rows">
-              {d.cast?.map((c) => (
-                <li key={c.id}>
-                  <Go id={c.id} kind="ch" onNavigate={onNavigate}>
-                    {c.name}
-                    <small>{ROLE_LABEL[c.role]}</small>
-                  </Go>
-                  <div className="rows__sub">
-                    {c.vas?.map((v, i) => (
-                      <Go key={`${v.id}-${i}`} id={v.id} kind="va" onNavigate={onNavigate}>
-                        {v.name}
-                        <small>{[v.kind && (KIND_NOTE[v.kind] ?? v.kind), period(v.period)].filter(Boolean).join("・")}</small>
-                      </Go>
-                    ))}
-                  </div>
+            <ListSection title="シリーズ" items={d.related} text={(w) => w.name}>
+              {(w) => (
+                <li key={w.id}>
+                  {go(w, "wk", [w.relation && (RELATION_LABEL[w.relation] ?? w.relation), workMeta(w)].filter(Boolean).join("・"))}
                 </li>
-              ))}
-            </ul>
-          </section>
+              )}
+            </ListSection>
+          )}
         </>
       )}
 
@@ -263,9 +377,10 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
           {d.sources?.map((s) => (
             <li key={s.url}>
               <a href={s.url} target="_blank" rel="noreferrer">
-                {SOURCE_LABEL[s.source] ?? s.source} ↗
+                {SOURCE_LABEL[s.source] ?? s.source}
+                <Icon name="external" size={12} />
               </a>
-              <span className="muted">取得日 {s.fetchedAt}</span>
+              <span className="muted">{s.fetchedAt} 取得</span>
             </li>
           ))}
           {!d.sources?.length && <li className="muted">出典の記録がありません</li>}
@@ -277,8 +392,9 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
             で提供されています。
           </p>
         )}
-        <a className="link" href={issueUrl(d)} target="_blank" rel="noreferrer">
-          誤りを報告する（GitHub）↗
+        <a className="detail__report" href={issueUrl(d)} target="_blank" rel="noreferrer">
+          誤りを報告する
+          <Icon name="external" size={12} />
         </a>
       </section>
     </article>

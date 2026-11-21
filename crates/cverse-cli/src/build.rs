@@ -6,6 +6,8 @@
 //!   graph.bin        CSR バイナリ（経路探索・近傍抽出用）
 //!   index.json       { ids: [...], labels: [...] }（ノード番号 → ID・表示名）
 //!   search.txt       検索キー（1 行 1 ノード、キーはタブ区切り）
+//!   images.json      { bases: [...], refs: [...] }（ノード番号 → 画像 URL。画像が 1 件も無ければ出さない）
+//!   local/…          データに同梱された画像（相対パスで指定されたもの）の写し
 //!   nodes/<k>.json   詳細パネル用。ID のハッシュで分けたシャード
 //! ```
 //!
@@ -21,7 +23,7 @@ use cverse_core::search::SearchIndex;
 use cverse_core::{Format, Graph};
 use serde_json::{json, Map, Value};
 
-use crate::model::{Dataset, Source};
+use crate::model::{is_remote, Dataset, Image, Source};
 
 /// 1 シャードあたりの目安ノード数。
 const NODES_PER_SHARD: usize = 120;
@@ -32,7 +34,12 @@ pub struct Built {
     pub labels: Vec<String>,
     pub search_keys: Vec<String>,
     pub details: Vec<Value>,
+    /// ノード番号 → 画像（ブラウザから見た URL に直したもの）。
+    pub images: Vec<Option<Image>>,
+    /// 配信先へ写す同梱画像（データのディレクトリからの相対パス）。
+    pub local_files: Vec<String>,
     pub featured: Vec<String>,
+    pub featured_works: Vec<String>,
     pub data_date: String,
 }
 
@@ -87,6 +94,49 @@ fn sources_json(sources: &[Source]) -> Value {
     json!(sources)
 }
 
+/// 同梱画像の配信先（`<out>/local/…`）。
+const LOCAL_PREFIX: &str = "local/";
+
+/// 画像をブラウザから見た形に直す。同梱画像（相対パス）は `local/` 配下を指す。
+fn published(image: &Option<Image>, local_files: &mut Vec<String>) -> Option<Image> {
+    let mut image = image.clone()?;
+    if !is_remote(&image.url) {
+        local_files.push(image.url.clone());
+        image.url = format!("{LOCAL_PREFIX}{}", image.url);
+    }
+    Some(image)
+}
+
+fn image_json(image: &Option<Image>) -> Value {
+    match image {
+        Some(i) => obj(json!(i)),
+        None => Value::Null,
+    }
+}
+
+/// 画像 URL の表を小さくまとめる。URL の「最後の `/` まで」を `bases` に 1 回だけ持ち、
+/// ノードごとには `"<bases の番号>:<残り>"` を持つ（画像なしは空文字列）。
+pub fn image_table(images: &[Option<Image>]) -> Value {
+    let mut bases: Vec<&str> = Vec::new();
+    let mut base_index: HashMap<&str, usize> = HashMap::new();
+    let refs: Vec<String> = images
+        .iter()
+        .map(|image| {
+            let Some(image) = image else {
+                return String::new();
+            };
+            let cut = image.url.rfind('/').map_or(0, |i| i + 1);
+            let (base, rest) = image.url.split_at(cut);
+            let k = *base_index.entry(base).or_insert_with(|| {
+                bases.push(base);
+                bases.len() - 1
+            });
+            format!("{k}:{rest}")
+        })
+        .collect();
+    json!({ "bases": bases, "refs": refs })
+}
+
 pub fn build(ds: &Dataset) -> Built {
     // ノード番号: 声優（お気に入り順）→ キャラ → 作品（人気順）。
     let mut vas: Vec<_> = ds.voice_actors.iter().collect();
@@ -101,6 +151,8 @@ pub fn build(ds: &Dataset) -> Built {
     let mut ids = Vec::new();
     let mut labels = Vec::new();
     let mut search_keys = Vec::new();
+    let mut images: Vec<Option<Image>> = Vec::new();
+    let mut local_files: Vec<String> = Vec::new();
 
     for v in &vas {
         let i = gb.add_node(
@@ -112,6 +164,7 @@ pub fn build(ds: &Dataset) -> Built {
         idx.insert(&v.id, i);
         ids.push(v.id.clone());
         labels.push(v.name.clone());
+        images.push(published(&v.image, &mut local_files));
         search_keys.push(SearchIndex::make_key(
             [
                 Some(v.name.as_str()),
@@ -133,6 +186,7 @@ pub fn build(ds: &Dataset) -> Built {
         idx.insert(&c.id, i);
         ids.push(c.id.clone());
         labels.push(c.name.clone());
+        images.push(published(&c.image, &mut local_files));
         search_keys.push(SearchIndex::make_key(
             [
                 Some(c.name.as_str()),
@@ -155,6 +209,7 @@ pub fn build(ds: &Dataset) -> Built {
         idx.insert(&w.id, i);
         ids.push(w.id.clone());
         labels.push(w.title.clone());
+        images.push(published(&w.image, &mut local_files));
         search_keys.push(SearchIndex::make_key(
             [
                 Some(w.title.as_str()),
@@ -304,6 +359,7 @@ pub fn build(ds: &Dataset) -> Built {
             "aliases": v.aliases, "agency": v.agency, "debutYear": v.debut_year,
             "anilistId": v.anilist_id, "wikipediaTitle": v.wikipedia_title, "wikidataId": v.wikidata_id,
             "favourites": v.favourites, "sources": sources_json(&v.sources),
+            "image": image_json(&images[idx[v.id.as_str()] as usize]),
             "roles": roles.into_iter().map(|r| r.2).collect::<Vec<_>>(),
         })));
     }
@@ -334,6 +390,7 @@ pub fn build(ds: &Dataset) -> Built {
             "id": c.id, "kind": "ch", "name": c.name, "reading": c.reading, "nameEn": c.name_en,
             "aliases": c.aliases, "anilistId": c.anilist_id, "wikipediaTitle": c.wikipedia_title,
             "sources": sources_json(&c.sources),
+            "image": image_json(&images[idx[c.id.as_str()] as usize]),
             "voicedBy": voiced, "works": works_of(&c.id), "relations": relations,
         })));
     }
@@ -396,11 +453,15 @@ pub fn build(ds: &Dataset) -> Built {
             "format": w.format, "year": w.year, "series": w.series,
             "anilistId": w.anilist_id, "wikipediaTitle": w.wikipedia_title,
             "sources": sources_json(&w.sources),
+            "image": image_json(&images[idx[w.id.as_str()] as usize]),
             "cast": cast, "related": related,
         })));
     }
 
     let featured = vas.iter().take(24).map(|v| v.id.clone()).collect();
+    let featured_works = works.iter().take(12).map(|w| w.id.clone()).collect();
+    local_files.sort_unstable();
+    local_files.dedup();
     let data_date = ds
         .voice_actors
         .iter()
@@ -418,17 +479,43 @@ pub fn build(ds: &Dataset) -> Built {
         labels,
         search_keys,
         details,
+        images,
+        local_files,
         featured,
+        featured_works,
         data_date,
     }
 }
 
-pub fn write(built: &Built, out: &Path, generated_at: &str) -> Result<()> {
+/// `source` は収集データのディレクトリ（同梱画像の写し元）。
+pub fn write(built: &Built, source: &Path, out: &Path, generated_at: &str) -> Result<()> {
     let nodes_dir = out.join("nodes");
-    if nodes_dir.exists() {
-        std::fs::remove_dir_all(&nodes_dir).context("古い nodes/ を消せません")?;
+    let local_dir = out.join(LOCAL_PREFIX);
+    for (dir, name) in [(&nodes_dir, "nodes/"), (&local_dir, LOCAL_PREFIX)] {
+        if dir.exists() {
+            std::fs::remove_dir_all(dir).with_context(|| format!("古い {name} を消せません"))?;
+        }
     }
     std::fs::create_dir_all(&nodes_dir)?;
+
+    // 画像: URL の表と、同梱画像の写し。
+    let image_count = built.images.iter().flatten().count();
+    let images_path = out.join("images.json");
+    if image_count > 0 {
+        std::fs::write(
+            &images_path,
+            serde_json::to_vec(&image_table(&built.images))?,
+        )?;
+    } else if images_path.exists() {
+        std::fs::remove_file(&images_path)?;
+    }
+    for rel in &built.local_files {
+        let to = local_dir.join(rel);
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(source.join(rel), &to).with_context(|| format!("画像 {rel} を写せません"))?;
+    }
 
     std::fs::write(out.join("graph.bin"), built.graph.to_bytes())?;
     std::fs::write(
@@ -461,7 +548,9 @@ pub fn write(built: &Built, out: &Path, generated_at: &str) -> Result<()> {
             "edges": built.graph.edge_count(),
         },
         "shardCount": shards,
+        "images": image_count,
         "featured": built.featured,
+        "featuredWorks": built.featured_works,
     });
     std::fs::write(out.join("meta.json"), serde_json::to_vec_pretty(&meta)?)?;
     Ok(())
@@ -477,6 +566,35 @@ mod tests {
         assert_eq!(fnv1a(""), 0x811c_9dc5);
         assert_eq!(fnv1a("a"), 0xe40c_292c);
         assert_eq!(fnv1a("声優"), 0xf271c860);
+    }
+
+    #[test]
+    fn image_table_shares_url_prefixes() {
+        let image = |url: &str| {
+            Some(Image {
+                url: url.to_owned(),
+                source: None,
+                page_url: None,
+                license: None,
+                attribution: None,
+                width: None,
+                height: None,
+            })
+        };
+        let table = image_table(&[
+            image("https://img.example/character/large/b1-abc.png"),
+            None,
+            image("https://img.example/character/large/b2-def.png"),
+            image("local/images/va-001.svg"),
+            image("plain.png"),
+        ]);
+        assert_eq!(
+            table,
+            json!({
+                "bases": ["https://img.example/character/large/", "local/images/", ""],
+                "refs": ["0:b1-abc.png", "", "0:b2-def.png", "1:va-001.svg", "2:plain.png"],
+            })
+        );
     }
 
     #[test]

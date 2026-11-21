@@ -52,6 +52,11 @@ class EngineClient {
     await this.ready;
     return this.call("briefs", ids);
   }
+
+  async randomVoiceActor(): Promise<string | null> {
+    await this.ready;
+    return this.call("randomVoiceActor");
+  }
 }
 
 export const engine = new EngineClient();

@@ -65,6 +65,11 @@ impl Engine {
         self.graph.year.clone()
     }
 
+    /// ノードごとの優先度（お気に入り数・人気）。並び順や代表作の選び方に使う。
+    pub fn scores(&self) -> Vec<u32> {
+        self.graph.score.clone()
+    }
+
     /// `[隣接ノード, 属性, 隣接ノード, 属性, …]`
     pub fn neighbors(&self, u: u32) -> Vec<u32> {
         if u as usize >= self.graph.node_count() {

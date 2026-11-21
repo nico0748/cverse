@@ -5,5 +5,5 @@ export default defineConfig({
   plugins: [react()],
   worker: { format: "es" },
   build: { target: "es2022" },
-  test: { environment: "node", include: ["src/**/*.test.ts"] },
+  test: { environment: "node", include: ["src/**/*.test.ts"], css: true },
 });
