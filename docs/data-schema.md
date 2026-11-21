@@ -49,7 +49,7 @@ data/source/
 | anilistId | number | | |
 | wikipediaTitle | string | | 日本語版 Wikipedia の記事名 |
 | wikidataId | string | | 例 `Q49582` |
-| favourites | number | | AniList お気に入り数 |
+| favourites | number | | AniList お気に入り数。並び順と「上位だけ描く」ときの優先度に使う |
 | sources | Source[] | ✓ | |
 
 ## Character
@@ -63,6 +63,7 @@ data/source/
 | aliases | string[] | | |
 | anilistId | number | | |
 | wikipediaTitle | string | | 単独記事がある場合のみ |
+| favourites | number | | AniList お気に入り数。無ければ登場作品の人気から算出する |
 | sources | Source[] | ✓ | |
 
 同じキャラを複数の声優が演じた場合もキャラは 1 件にまとめ、Cast を複数張る。
@@ -73,7 +74,7 @@ data/source/
 |---|---|---|---|
 | id | string | ✓ | `wk:` で始まる |
 | title | string | ✓ | 日本語タイトル |
-| reading | string | | |
+| reading | string | 推奨 | 読み。ひらがな検索に使う |
 | titleEn | string | | ローマ字/英語 |
 | format | string | ✓ | `TV` `TV_SHORT` `MOVIE` `OVA` `ONA` `SPECIAL` `GAME` |
 | year | number | 推奨 | 開始年 |

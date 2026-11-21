@@ -1,0 +1,6 @@
+[
+{"from": "wk:sample-001", "to": "wk:sample-002", "relation": "SEQUEL"},
+{"from": "wk:sample-006", "to": "wk:sample-007", "relation": "SEQUEL"},
+{"from": "wk:sample-033", "to": "wk:sample-034", "relation": "SEQUEL"},
+{"from": "wk:sample-034", "to": "wk:sample-035", "relation": "SEQUEL"}
+]

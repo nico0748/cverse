@@ -1,0 +1,15 @@
+[package]
+name = "cverse-wasm"
+description = "cverse-core のブラウザ向けバインディング"
+edition.workspace = true
+version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cverse-core = { path = "../cverse-core" }
+wasm-bindgen = "0.2"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
