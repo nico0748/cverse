@@ -23,6 +23,7 @@ jobs:
       - name: サンプルデータを検証して配信データを生成
         run: |
           cargo run --release -p cverse-cli -- validate data/sample
+          cargo run --release -p cverse-cli -- validate data/source
           cargo run --release -p cverse-cli -- build data/sample --out web/public/data
 
   web:
