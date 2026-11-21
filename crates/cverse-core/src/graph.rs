@@ -273,9 +273,11 @@ impl Graph {
         let format = r.take(n)?.to_vec();
         r.align4();
         let year = r
-            .take(n * 2)?
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .take(n.checked_mul(2).ok_or(DecodeError::Truncated)?)?
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_le_bytes(*c))
             .collect();
         r.align4();
         let score = r.u32s(n)?;
@@ -340,8 +342,10 @@ impl<'a> Reader<'a> {
         let len_bytes = len.checked_mul(4).ok_or(DecodeError::Truncated)?;
         Ok(self
             .take(len_bytes)?
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| u32::from_le_bytes(*c))
             .collect())
     }
 }
