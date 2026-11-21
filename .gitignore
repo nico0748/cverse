@@ -5,3 +5,4 @@ web/public/data/
 web/src/wasm/pkg/
 *.log
 .DS_Store
+scripts/.cache/

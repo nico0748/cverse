@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "wasm": "wasm-pack build ../crates/cverse-wasm --target web --release --out-dir ../../web/src/wasm/pkg --no-pack",
-    "data": "cargo run --release -p cverse-cli -- build ../data/${CVERSE_DATA:-sample} --out public/data",
+    "data": "cargo run --release -p cverse-cli -- build ../data/${CVERSE_DATA:-source} --out public/data",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
