@@ -202,7 +202,9 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
       // 小さいとき（3 段目など）は種類の色の印だけにする。頭文字の読めない淡い札は出さない。
       if (r < 8) return;
       const edge = Math.max(1.5, Math.min(3, r * 0.09));
-      const picture = node.image ? sprite(node.image, node.shape, FOCUS_Y[node.kind]) : null;
+      // 画面に出る高さ（端末の画素）に合う細かさの絵を頼む。中心や拡大時は細かい絵に差し替わる。
+      const px = 2 * r * HALF[node.shape].h * (window.devicePixelRatio || 1);
+      const picture = node.image ? sprite(node.image, node.shape, FOCUS_Y[node.kind], px) : null;
       shapePath(node.shape, x, y, r, -edge);
       ctx.fillStyle = colors.tint;
       ctx.fill();
@@ -335,6 +337,9 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
         overlay.height = Math.round(height * ratio);
       }
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      // キャンバスの大きさを変えると描画の設定が戻るので、毎回指定する。
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
       ctx.clearRect(0, 0, width, height);
       const hovered = hoveredRef.current;
       const pr = projection();
