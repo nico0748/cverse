@@ -2,21 +2,29 @@ import { useCallback, useSyncExternalStore } from "react";
 import type { Kind } from "./types";
 
 /**
- * 種類ごとの形（F-04）。色だけに頼らず形でも区別する: 声優 = 丸、キャラ = 角丸、作品 = 四角。
- * 四角は同じ「大きさ」でも丸より広く見えるので、少し縮めて見た目の大きさを揃える（scale）。
+ * 種類ごとの形（F-04）。色だけに頼らず形でも区別する: 声優 = 丸、キャラ = 角丸の四角、作品 = 縦長の四角。
+ * 作品はポスターやキービジュアルの比率（3:4）にして、小さく描かれても人物と見分けられるようにする。
+ * 角丸の四角は同じ「大きさ」でも丸より広く見えるので、少し縮めて見た目の大きさを揃える（scale）。
  * 色は styles.css の変数（--va / --ch / --wk など）が正で、キャンバスへはそこから読み取る。
  */
-export type Shape = "circle" | "rounded" | "square";
+export type Shape = "circle" | "rounded" | "poster";
 
 export const KIND_SHAPE: Record<Kind | "more", { shape: Shape; scale: number; shapeLabel: string }> = {
   va: { shape: "circle", scale: 1, shapeLabel: "丸" },
-  ch: { shape: "rounded", scale: 0.92, shapeLabel: "角丸" },
-  wk: { shape: "square", scale: 0.86, shapeLabel: "四角" },
+  ch: { shape: "rounded", scale: 0.92, shapeLabel: "角丸の四角" },
+  wk: { shape: "poster", scale: 1.04, shapeLabel: "縦長の四角" },
   more: { shape: "circle", scale: 1, shapeLabel: "" },
 };
 
-/** 角の丸み（辺の半分に対する比）。CSS とキャンバスと WebGL で同じ値を使う。 */
-export const CORNER: Record<Shape, number> = { circle: 1, rounded: 0.36, square: 0.1 };
+/** 形の幅と高さの半分（「大きさ」に対する比）。CSS とキャンバスと WebGL で同じ値を使う。 */
+export const HALF: Record<Shape, { w: number; h: number }> = {
+  circle: { w: 1, h: 1 },
+  rounded: { w: 1, h: 1 },
+  poster: { w: 0.735, h: 0.98 },
+};
+
+/** 角の丸み（幅の半分に対する比）。 */
+export const CORNER: Record<Shape, number> = { circle: 1, rounded: 0.36, poster: 0.14 };
 
 export interface KindColors {
   /** 輪郭・小さな印に使う色。 */
@@ -33,7 +41,7 @@ export interface Palette {
   surface: string;
   ink: string;
   inkDim: string;
-  line: string;
+  lineStrong: string;
   accent: string;
   kinds: Record<Kind | "more", KindColors>;
 }
@@ -47,15 +55,18 @@ export function readPalette(): Palette {
     surface: v("--surface"),
     ink: v("--ink"),
     inkDim: v("--ink-2"),
-    line: v("--line"),
+    lineStrong: v("--line-strong"),
     accent: v("--accent"),
     kinds: { va: kind("va"), ch: kind("ch"), wk: kind("wk"), more: kind("more") },
   };
 }
 
-/** `#rrggbb` に不透明度を付ける。 */
+/** `#rrggbb`（または `#rgb`）に不透明度を付ける。 */
 export function alpha(hex: string, a: number): string {
-  const n = parseInt(hex.slice(1), 16);
+  const h = hex.trim().replace(/^#/, "");
+  const full = h.length === 3 ? [...h].map((c) => c + c).join("") : h;
+  if (!/^[0-9a-f]{6}$/i.test(full)) return hex;
+  const n = parseInt(full, 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
@@ -77,8 +88,12 @@ function stored(): ThemeName | null {
   }
 }
 
+/** この画面で選んだ配色。保存できない環境でも、開いているあいだは切り替えられるように持っておく。 */
+let chosen: ThemeName | null | undefined;
+
 function current(): ThemeName {
-  return stored() ?? (media?.matches ? "dark" : "light");
+  if (chosen === undefined) chosen = stored();
+  return chosen ?? (media?.matches ? "dark" : "light");
 }
 
 function apply() {
@@ -89,6 +104,14 @@ function apply() {
 }
 
 media?.addEventListener("change", apply);
+// 別のタブで切り替えたら、こちらも合わせる。
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key !== KEY && e.key !== null) return;
+    chosen = stored();
+    apply();
+  });
+}
 
 function subscribe(listener: () => void) {
   listeners.add(listener);
@@ -98,10 +121,11 @@ function subscribe(listener: () => void) {
 export function useTheme() {
   const theme = useSyncExternalStore(subscribe, current, () => "light" as ThemeName);
   const toggle = useCallback(() => {
+    chosen = current() === "dark" ? "light" : "dark";
     try {
-      localStorage.setItem(KEY, current() === "dark" ? "light" : "dark");
+      localStorage.setItem(KEY, chosen);
     } catch {
-      // 保存できない環境では切り替えられない（端末の設定に従う）。
+      // 保存できない環境では、このページを開いているあいだだけ切り替わる。
     }
     apply();
   }, []);

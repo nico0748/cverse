@@ -12,6 +12,8 @@ interface Props {
   history: NodeBrief[];
   /** 右側の相関図で中心にしているノード。 */
   hero: NodeBrief | null;
+  /** 狭い画面（スマホ）か。 */
+  compact: boolean;
   onNavigate: (id: string) => void;
   onRandom: () => void;
   onPath: (from: NodeBrief | null, to: NodeBrief | null) => void;
@@ -19,7 +21,7 @@ interface Props {
 }
 
 /** 入口の画面。検索・続きから・声優から・作品から・2 人のつながり、のどこからでも入れる。 */
-export function Home({ meta, featured, featuredWorks, favorites, history, hero, onNavigate, onRandom, onPath, onAbout }: Props) {
+export function Home({ meta, featured, featuredWorks, favorites, history, hero, compact, onNavigate, onRandom, onPath, onAbout }: Props) {
   // つながりの例: 人気の声優から離れた 2 人を組にする。
   const pairs: [NodeBrief, NodeBrief][] = [];
   for (const [a, b] of [[0, 7], [2, 11], [4, 15]]) {
@@ -28,7 +30,7 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
   const resume = history.slice(0, 6);
   return (
     <div className="home">
-      <div className="home__col">
+      <div className="home__col" id="home" tabIndex={-1}>
         <section className="home__hero" aria-labelledby="home-title">
           <h1 id="home-title" className="home__title">
             この声、
@@ -36,11 +38,11 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
             あのキャラも。
           </h1>
           <p className="home__lead">
-            声優・キャラ・作品のつながりを、1 枚の相関図でたどれます。気になる名前を入れて、押したノードから次へ次へと渡り歩いてください。
+            声優・キャラ・作品のつながりを、1枚の相関図でたどれます。気になる名前を入れて、押したノードから次へ次へと渡り歩いてください。
           </p>
           <SearchBox
             label="声優・キャラ・作品を検索"
-            placeholder="声優・キャラ・作品の名前（ひらがなでも）"
+            placeholder={compact ? "名前で検索" : "声優・キャラ・作品の名前（ひらがなでも）"}
             onPick={(n) => onNavigate(n.id)}
             suggestions={resume}
             suggestionsLabel="最近見た"
@@ -48,6 +50,7 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
             hotkey
             large
           />
+          {compact && <p className="home__note home__note--search">声優・キャラ・作品を、ひらがなの読みでも探せます。</p>}
           <div className="home__quick">
             <button type="button" className="button" onClick={onRandom}>
               <Icon name="shuffle" />
@@ -55,7 +58,7 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
             </button>
             <button type="button" className="button" onClick={() => onPath(null, null)}>
               <Icon name="route" />
-              2 人のつながりを調べる
+              2人のつながりを調べる
             </button>
           </div>
         </section>
@@ -114,8 +117,8 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
 
         {pairs.length > 0 && (
           <section aria-labelledby="home-path">
-            <h2 id="home-path">2 人のつながりを調べる</h2>
-            <p className="home__note">共演した作品をたどって、2 人が何ステップでつながるかを探します。</p>
+            <h2 id="home-path">2人のつながりを調べる</h2>
+            <p className="home__note">共演した作品をたどって、2人が何ステップでつながるかを探します。</p>
             <ul className="pairs">
               {pairs.map(([a, b]) => (
                 <li key={`${a.id}-${b.id}`}>
@@ -136,8 +139,8 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
         <footer className="home__foot">
           {meta && (
             <p>
-              声優 {meta.counts.voiceActors.toLocaleString()} 人、キャラ {meta.counts.characters.toLocaleString()} 人、作品{" "}
-              {meta.counts.works.toLocaleString()} 本を収録
+              声優{meta.counts.voiceActors.toLocaleString()}人、キャラ{meta.counts.characters.toLocaleString()}人、作品
+              {meta.counts.works.toLocaleString()}本を収録
               {meta.dataDate && <>（{meta.dataDate} 取得）</>}
             </p>
           )}
@@ -156,9 +159,9 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
       {hero && (
         <p className="home__caption">
           <span>
-            <strong>{hero.label}</strong> の相関図
+            今日の相関図: <strong>{hero.label}</strong>
           </span>
-          <button type="button" className="button button--primary" onClick={() => onNavigate(hero.id)}>
+          <button type="button" className="button" onClick={() => onNavigate(hero.id)}>
             この図を開く
           </button>
         </p>

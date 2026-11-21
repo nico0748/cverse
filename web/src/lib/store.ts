@@ -4,7 +4,7 @@ import { useCallback, useSyncExternalStore } from "react";
  * この端末のブラウザ内だけに保存する ID の一覧（お気に入り・最近見たもの）。
  * ログインは無いので、サーバーには何も送らない。
  */
-function createIdList(key: string, limit: number) {
+export function createIdList(key: string, limit: number) {
   const listeners = new Set<() => void>();
   let cache: string[] | null = null;
 
@@ -34,6 +34,15 @@ function createIdList(key: string, limit: number) {
     return () => listeners.delete(listener);
   };
 
+  // 別のタブで変わったら読み直す（古い控えで上書きしてしまわないように）。
+  if (typeof window !== "undefined") {
+    window.addEventListener("storage", (e) => {
+      if (e.key !== key && e.key !== null) return;
+      cache = null;
+      listeners.forEach((l) => l());
+    });
+  }
+
   return { read, write, subscribe };
 }
 
@@ -58,7 +67,9 @@ export function useHistory() {
     if (cur[0] !== id) historyStore.write([id, ...cur.filter((x) => x !== id)]);
   }, []);
   const clear = useCallback(() => historyStore.write([]), []);
-  return { history, visit, clear };
+  /** 消した履歴を元に戻す。 */
+  const restore = useCallback((list: string[]) => historyStore.write(list), []);
+  return { history, visit, clear, restore };
 }
 
 /** 一度だけ見せる案内を、もう見たかどうか。 */

@@ -8,6 +8,7 @@
 import init, { Engine } from "../wasm/pkg/cverse_wasm";
 import wasmUrl from "../wasm/pkg/cverse_wasm_bg.wasm?url";
 import { FORMAT_LABEL, type EdgeType, type Kind, type Meta, type NodeBrief, type PathData, type PathMode, type ViewData } from "../lib/types";
+import { expandImages } from "../lib/images";
 import { NO_NODE, decodePath, decodeView, edgeIrregular, edgeMedia, edgeRole, edgeType } from "./decode";
 
 const KIND: Kind[] = ["va", "ch", "wk"];
@@ -29,38 +30,30 @@ let scores: Uint32Array;
 let images: string[] = [];
 const indexOf = new Map<string, number>();
 
-/** images.json（{ bases, refs }）をノードごとの URL に戻す。相対 URL はデータの置き場所から解決する。 */
-function expandImages(table: { bases: string[]; refs: string[] }, dataBase: string): string[] {
-  const bases = table.bases.map((b) => (/^https:\/\//.test(b) ? b : dataBase + b));
-  return table.refs.map((ref) => {
-    if (!ref) return "";
-    const cut = ref.indexOf(":");
-    return bases[Number(ref.slice(0, cut))] + ref.slice(cut + 1);
-  });
-}
-
 async function boot(base: string) {
   const get = async (path: string) => {
     const r = await fetch(`${base}data/${path}`);
     if (!r.ok) throw new Error(`${path} を読み込めません (${r.status})`);
     return r;
   };
-  const [, metaJson, graph, index, search] = await Promise.all([
+  const dataBase = new URL(`${base}data/`, self.location.href).href;
+  const [, metaJson, graph, index, search, imageList] = await Promise.all([
     init({ module_or_path: wasmUrl }),
     get("meta.json").then((r) => r.json()),
     get("graph.bin").then((r) => r.arrayBuffer()),
     get("index.json").then((r) => r.json()),
     get("search.txt").then((r) => r.text()),
-  ]);
-  meta = metaJson;
-  if ((meta.images ?? 0) > 0) {
     // 画像の表は無くても動く（頭文字のアイコンになる）ので、読めなくても起動は続ける。
-    const dataBase = new URL(`${base}data/`, self.location.href).href;
-    images = await get("images.json")
+    get("images.json")
       .then((r) => r.json())
       .then((t) => expandImages(t, dataBase))
-      .catch(() => []);
-  }
+      .catch((e: unknown) => {
+        console.warn("画像の一覧を読み込めませんでした。頭文字のアイコンで表示します。", e);
+        return [] as string[];
+      }),
+  ]);
+  meta = metaJson;
+  images = imageList;
   ids = index.ids;
   labels = index.labels;
   engine = new Engine(new Uint8Array(graph), search);
@@ -95,7 +88,7 @@ function sub(u: number): string | undefined {
       count++;
       if (best < 0 || scores[v] > scores[best]) best = v;
     }
-    return best < 0 ? undefined : `${labels[best]} 役${count > 1 ? "など" : ""}`;
+    return best < 0 ? undefined : `${labels[best]}役${count > 1 ? "など" : ""}`;
   }
   if (kinds[u] === 1) {
     let best: [number, number] | null = null;

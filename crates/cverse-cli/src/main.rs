@@ -24,7 +24,9 @@ const USAGE: &str = "\
   cverse-cli validate <source-dir>                 収集データを検証する
   cverse-cli build <source-dir> --out <out-dir> [--images all|licensed|none]
                                                    配信データを生成する（--images で載せる画像を選ぶ。
-                                                   licensed はライセンス表記のある画像だけ、none は画像なし）
+                                                   licensed は再利用できるライセンスの画像だけ
+                                                   （パブリックドメイン、CC0、クレジット付きの CC BY / BY-SA）、
+                                                   none は画像なし）
   cverse-cli path <data-dir> <id-a> <id-b> [--mode bfs|main|weighted]
                                                    最短経路を表示する
   cverse-cli bench <data-dir> [--pairs N]          片方向 BFS と双方向 BFS を比べる

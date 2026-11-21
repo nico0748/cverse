@@ -15,6 +15,7 @@ describe("URL と画面状態", () => {
       depth: 2,
       filter: { anime: true, game: false, formats: ["tv", "movie"], yearMin: 2010, yearMax: null, mainOnly: true },
       path: { from: "va:al-1", to: "wk:wp-原神", mode: "weighted" },
+      pathOpen: true,
     };
     const url = serializeRoute(state);
     expect(url).toContain("c=va:al-95185");
@@ -28,6 +29,20 @@ describe("URL と画面状態", () => {
     expect(s.filter.yearMin).toBeNull();
     expect(s.filter.yearMax).toBeNull();
     expect(s.path).toEqual({ from: "a", to: "b", mode: "bfs" });
+  });
+});
+
+describe("「つながりを調べる」の画面", () => {
+  it("経路が決まる前でも、開いていることを URL に持てる（戻るで閉じられるように）", () => {
+    const open: RouteState = { ...EMPTY_ROUTE, center: "va:1", pathOpen: true };
+    expect(serializeRoute(open)).toBe("?c=va:1&t=path");
+    expect(parseRoute("?c=va:1&t=path")).toEqual(open);
+    expect(parseRoute("?t=path").pathOpen).toBe(true);
+  });
+
+  it("経路があれば、開いているとみなす", () => {
+    expect(parseRoute("?p=va:1~va:2").pathOpen).toBe(true);
+    expect(serializeRoute({ ...EMPTY_ROUTE, path: { from: "va:1", to: "va:2", mode: "bfs" }, pathOpen: true })).toBe("?p=va:1~va:2");
   });
 });
 

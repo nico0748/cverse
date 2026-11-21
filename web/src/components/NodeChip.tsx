@@ -20,7 +20,7 @@ export function NodeRow({ node, onPick, sub }: { node: NodeBrief; onPick: (id: s
 export function NodeCard({ node, onPick }: { node: NodeBrief; onPick: (id: string) => void }) {
   return (
     <button type="button" className={`node-card node-card--${node.kind}`} onClick={() => onPick(node.id)}>
-      <Thumb kind={node.kind} src={node.image} label={node.label} size={node.kind === "wk" ? 84 : 72} poster={node.kind === "wk"} />
+      <Thumb kind={node.kind} src={node.image} label={node.label} size={node.kind === "wk" ? 78 : 80} />
       <span className="node-card__name">{node.label}</span>
       {node.sub && <span className="node-card__sub">{node.sub}</span>}
     </button>

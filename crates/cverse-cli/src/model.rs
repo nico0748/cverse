@@ -364,7 +364,7 @@ impl Dataset {
     pub fn apply_image_policy(&mut self, policy: ImagePolicy) {
         let keep = |image: &Option<Image>| match policy {
             ImagePolicy::All => true,
-            ImagePolicy::Licensed => image.as_ref().is_some_and(|i| i.license.is_some()),
+            ImagePolicy::Licensed => image.as_ref().is_some_and(is_freely_licensed),
             ImagePolicy::None => false,
         };
         for image in self
@@ -403,6 +403,35 @@ fn is_web_url(url: &str) -> bool {
     rest.is_some_and(|r| !r.is_empty() && !url.contains(char::is_whitespace))
 }
 
+/// 再利用が許されている画像か（`--images licensed` で残す条件）。
+///
+/// `license` が書いてあるだけでは足りない（「All rights reserved」も書ける）ので、パブリックドメインか
+/// CC0 / CC BY / CC BY-SA に限る。改変禁止（ND）と非営利限定（NC）は、切り抜いて表示するこのサイトの
+/// 使い方に合わないことがあるので含めない。CC BY 系は、クレジットを出せるよう作者名か掲載元ページを求める。
+fn is_freely_licensed(image: &Image) -> bool {
+    let Some(license) = image.license.as_deref() else {
+        return false;
+    };
+    let key: String = license
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    if key.starts_with("cc0") || key.starts_with("publicdomain") || key == "pd" || key == "pdm" {
+        return true;
+    }
+    let attribution_share = key.starts_with("ccby") && !key.contains("nc") && !key.contains("nd");
+    let credited = image
+        .attribution
+        .as_deref()
+        .is_some_and(|a| !a.trim().is_empty())
+        || image.page_url.is_some();
+    attribution_share && credited
+}
+
+/// 同梱できる画像の拡張子。それ以外のファイル（データの JSON や設定ファイルなど）は公開しない。
+const IMAGE_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "webp", "avif", "gif", "svg"];
+
 fn check_image_url(root: &Path, url: &str) -> Result<(), String> {
     if is_remote(url) {
         return if url.len() > "https://".len() && !url.contains(char::is_whitespace) {
@@ -414,17 +443,76 @@ fn check_image_url(root: &Path, url: &str) -> Result<(), String> {
     if url.contains("://") || url.starts_with("//") || url.starts_with("data:") {
         return Err("https:// 以外の URL は使えません".into());
     }
-    let rel = Path::new(url);
-    let inside = rel
-        .components()
-        .all(|c| matches!(c, std::path::Component::Normal(_)));
-    if url.is_empty() || !inside {
-        return Err("相対パスはデータのディレクトリ配下に限ります".into());
+    // ここから先は、データのディレクトリに同梱した画像（相対パス）。配信先へそのまま写すので、
+    // 画像でないファイルや、ディレクトリの外・隠しファイルを指すものは受け付けない。
+    if url.is_empty()
+        || url
+            .chars()
+            .any(|c| c.is_whitespace() || matches!(c, '?' | '#' | '%' | '\\'))
+    {
+        return Err("相対パスに空白や ? # % \\ は使えません".into());
     }
-    if !root.join(rel).is_file() {
-        return Err(format!("{url} がありません"));
+    let rel = Path::new(url);
+    let inside = rel.components().all(|c| match c {
+        std::path::Component::Normal(name) => !name.to_string_lossy().starts_with('.'),
+        _ => false,
+    });
+    if !inside {
+        return Err("相対パスはデータのディレクトリ配下に限ります（隠しファイルも不可）".into());
+    }
+    let extension = rel
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    if !IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+        return Err(format!("{url} は画像ではありません（拡張子）"));
+    }
+    let path = root.join(rel);
+    let is_plain_file = std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_file());
+    if !is_plain_file {
+        return Err(format!("{url} がありません（リンクは不可）"));
+    }
+    // 途中のディレクトリがリンクで外を指していないことも確かめる。
+    let escapes = match (path.canonicalize(), root.canonicalize()) {
+        (Ok(file), Ok(base)) => !file.starts_with(base),
+        _ => true,
+    };
+    if escapes {
+        return Err(format!("{url} はデータのディレクトリの外を指しています"));
+    }
+    // SVG はサイトと同じ場所から配ると、中のスクリプトがサイトの権限で動く。動く要素を含むものは外す。
+    if extension == "svg" {
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_default()
+            .to_lowercase();
+        let active = [
+            "<script",
+            "javascript:",
+            "<foreignobject",
+            "<iframe",
+            "<embed",
+            "<object",
+        ]
+        .iter()
+        .any(|needle| text.contains(needle))
+            || has_event_handler(&text);
+        if text.is_empty() || active {
+            return Err(format!("{url} はスクリプトなどを含む SVG です"));
+        }
     }
     Ok(())
+}
+
+/// ` onload=` のようなイベント属性があるか。
+fn has_event_handler(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    text.match_indices("on").any(|(i, _)| {
+        let before =
+            i == 0 || bytes[i - 1].is_ascii_whitespace() || matches!(bytes[i - 1], b'"' | b'\'');
+        let rest = &text[i + 2..];
+        let name_len = rest.bytes().take_while(u8::is_ascii_lowercase).count();
+        before && name_len > 0 && rest[name_len..].trim_start().starts_with('=')
+    })
 }
 
 const MAX_LISTED: usize = 200;
@@ -552,5 +640,109 @@ mod tests {
         }
         assert_eq!(ImagePolicy::parse("licensed"), Some(ImagePolicy::Licensed));
         assert_eq!(ImagePolicy::parse("some"), None);
+    }
+
+    #[test]
+    fn licensed_means_a_license_that_allows_reuse() {
+        let image = |license: &str, credit: &str| -> Image {
+            serde_json::from_str(&format!(
+                r#"{{"url":"https://img.example/a.png","license":{license}{credit}}}"#
+            ))
+            .unwrap()
+        };
+        let credited = r#","attribution":"Someone""#;
+        let page = r#","pageUrl":"https://commons.example/File:a.png""#;
+        for (license, credit, expected) in [
+            (r#""CC0-1.0""#, "", true),
+            (r#""Public domain""#, "", true),
+            (r#""CC BY-SA 4.0""#, credited, true),
+            (r#""cc-by-4.0""#, page, true),
+            // クレジットを出せない CC BY は残さない。
+            (r#""CC BY 4.0""#, "", false),
+            (r#""CC BY-SA 4.0""#, r#","attribution":"  ""#, false),
+            // ライセンスの欄に何か書いてあるだけでは残さない。
+            (r#""""#, credited, false),
+            (r#""All rights reserved""#, credited, false),
+            (r#""fair use""#, credited, false),
+            (r#""CC BY-NC 4.0""#, credited, false),
+            (r#""CC BY-ND 4.0""#, credited, false),
+            ("null", credited, false),
+        ] {
+            assert_eq!(
+                is_freely_licensed(&image(license, credit)),
+                expected,
+                "{license} {credit}"
+            );
+        }
+    }
+
+    #[test]
+    fn bundled_images_must_be_plain_image_files_inside_the_data_directory() {
+        let root = std::env::temp_dir().join(format!("cverse-model-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("images")).unwrap();
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg"><rect width="2" height="3"/></svg>"#;
+        std::fs::write(root.join("images/ok.svg"), svg).unwrap();
+        std::fs::write(root.join("images/ok.png"), [0x89, b'P', b'N', b'G']).unwrap();
+        std::fs::write(root.join("images/.hidden.png"), [0u8]).unwrap();
+        std::fs::write(
+            root.join("images/script.svg"),
+            svg.replace("<rect", "<script>1</script><rect"),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("images/handler.svg"),
+            svg.replace("<rect", r#"<rect onload="x()""#),
+        )
+        .unwrap();
+        std::fs::write(root.join("casts.json"), "[]").unwrap();
+        std::fs::write(root.join(".git/config"), "x").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(root.join("casts.json"), root.join("images/link.png")).unwrap();
+
+        for ok in ["images/ok.svg", "images/ok.png"] {
+            assert_eq!(check_image_url(&root, ok), Ok(()), "{ok}");
+        }
+        for bad in [
+            "casts.json",
+            ".git/config",
+            "images/.hidden.png",
+            "images/script.svg",
+            "images/handler.svg",
+            "images/missing.png",
+            "images/ok.png?x=1",
+            "images/ok.png#frag",
+            "images/ok%2Epng",
+            "images/o k.png",
+            "../outside.png",
+            "/etc/hosts.png",
+            #[cfg(unix)]
+            "images/link.png",
+        ] {
+            assert!(
+                check_image_url(&root, bad).is_err(),
+                "{bad} を受け付けてしまった"
+            );
+        }
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn links_from_data_must_be_web_urls() {
+        assert!(is_web_url("https://anilist.co/staff/1"));
+        assert!(is_web_url("http://example.com"));
+        for bad in [
+            "javascript:alert(1)",
+            "data:text/html,x",
+            "https://",
+            "",
+            "https://a b",
+            "//example.com",
+        ] {
+            assert!(!is_web_url(bad), "{bad}");
+        }
+        assert!(has_event_handler(r#"<rect onclick="x">"#));
+        assert!(!has_event_handler(r#"<path d="M0 0" font-family="one">"#));
     }
 }

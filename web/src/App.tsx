@@ -1,26 +1,35 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { About } from "./components/About";
-import { Breadcrumbs } from "./components/Breadcrumbs";
+import { Breadcrumbs, type Crumb } from "./components/Breadcrumbs";
 import { Controls, Legend } from "./components/Controls";
 import { DetailPanel } from "./components/DetailPanel";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { GraphView } from "./components/GraphView";
 import { Home } from "./components/Home";
 import { Icon, LogoMark } from "./components/Icon";
 import { MyList } from "./components/MyList";
 import { PathPanel, type PathDraft } from "./components/PathPanel";
 import { SearchBox } from "./components/SearchBox";
+import { Thumb } from "./components/Thumb";
 import { engine } from "./lib/engine";
 import { useBriefs, useNarrow } from "./lib/hooks";
 import { sceneFromPath, sceneFromView, type SceneNode } from "./lib/scene";
 import { markSeen, seen, useFavorites, useHistory } from "./lib/store";
 import { useTheme } from "./lib/theme";
-import { DEFAULT_FILTER, type Filter, type Meta, type NodeBrief, type PathData, type ViewData } from "./lib/types";
-import { parseRoute, serializeRoute, type RouteState } from "./lib/url";
+import { DEFAULT_FILTER, KIND_LABEL, isDefaultFilter, type Filter, type Meta, type NodeBrief, type PathData, type ViewData } from "./lib/types";
+import { EMPTY_ROUTE, parseRoute, serializeRoute, type RouteState } from "./lib/url";
 
 const MAX_TRAIL = 40;
 
+/** 履歴の 1 件ごとに覚えておくもの。 */
+interface HistoryState {
+  trail?: unknown;
+  /** 「つながりを調べる」を開いたときに積んだ履歴か（閉じるときに 1 つ戻ればよい）。 */
+  opened?: boolean;
+}
+
 function initialTrail(route: RouteState): string[] {
-  const saved = (history.state as { trail?: unknown } | null)?.trail;
+  const saved = (history.state as HistoryState | null)?.trail;
   if (Array.isArray(saved) && saved.every((v) => typeof v === "string")) return saved;
   return route.center ? [route.center] : [];
 }
@@ -32,68 +41,95 @@ function heroOf(meta: Meta | null): string | null {
   return pool[Math.floor(Date.now() / 86_400_000) % pool.length];
 }
 
+/** スマホの下のシートの開き具合。 */
+type Sheet = "peek" | "half" | "full";
+
 export function App() {
   const [route, setRoute] = useState(() => parseRoute(location.search));
   const [trail, setTrail] = useState(() => initialTrail(route));
   const [meta, setMeta] = useState<Meta | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
-  const [view, setView] = useState<ViewData | null>(null);
+  // 図に出している近傍と、そのときの足跡。足跡だけ先に変わっても、新しい近傍が届くまで図は組み直さない。
+  const [shown, setShown] = useState<{ view: ViewData; trail: string[] } | null>(null);
   const [heroView, setHeroView] = useState<ViewData | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [viewError, setViewError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [pathData, setPathData] = useState<PathData | null>(null);
-  const [tab, setTab] = useState<"detail" | "path">(route.path ? "path" : "detail");
+  const [pathError, setPathError] = useState(false);
   const [draft, setDraft] = useState<PathDraft>({ from: null, to: null, mode: route.path?.mode ?? "bfs" });
   const [picking, setPicking] = useState<"from" | "to" | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheet, setSheet] = useState<Sheet>("peek");
   const [aboutOpen, setAboutOpen] = useState(false);
   const [hint, setHint] = useState(() => !seen("graph-hint"));
+  const [announcement, setAnnouncement] = useState("");
   const { favorites, toggle: toggleFavorite } = useFavorites();
-  const { history: visited, visit, clear: clearHistory } = useHistory();
+  const { history: visited, visit, clear: clearHistory, restore: restoreHistory } = useHistory();
   const { theme, toggle: toggleTheme } = useTheme();
   const narrow = useNarrow();
+  const panelRef = useRef<HTMLElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // あとから呼ばれる処理（検索の結果、おまかせ など）が古い状態で動かないよう、最新の状態を持っておく。
+  const live = useRef({ route, trail });
+  live.current = { route, trail };
+  const tab = route.pathOpen ? "path" : "detail";
 
   // ---- URL と履歴（F-05）: 中心ノードを URL に持たせ、ブラウザの「戻る」で前の中心へ戻る ----
-  const commit = useCallback((next: RouteState, nextTrail: string[], mode: "push" | "replace") => {
+  const commit = useCallback((next: RouteState, nextTrail: string[], mode: "push" | "replace", opened = false) => {
     const url = location.pathname + serializeRoute(next);
-    if (mode === "push") history.pushState({ trail: nextTrail }, "", url);
-    else history.replaceState({ trail: nextTrail }, "", url);
+    if (mode === "push") history.pushState({ trail: nextTrail, opened } satisfies HistoryState, "", url);
+    else history.replaceState({ trail: nextTrail, opened: !!(history.state as HistoryState | null)?.opened } satisfies HistoryState, "", url);
+    live.current = { route: next, trail: nextTrail };
     setRoute(next);
     setTrail(nextTrail);
   }, []);
 
+  const clearDraft = useCallback(() => setDraft((d) => ({ from: null, to: null, mode: d.mode })), []);
+
   useEffect(() => {
     const onPop = () => {
       const next = parseRoute(location.search);
+      const nextTrail = initialTrail(next);
+      live.current = { route: next, trail: nextTrail };
       setRoute(next);
-      setTrail(initialTrail(next));
-      setTab(next.path ? "path" : "detail");
+      setTrail(nextTrail);
       setPicking(null);
+      // 経路の無い画面へ戻ったら、入力欄も空にする（URL に経路があれば、下の処理が入れ直す）。
+      if (!next.path) clearDraft();
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [clearDraft]);
 
+  /** ノードを中心にする。同じ中心なら履歴は積まない。前に通った地点なら、足跡をそこまで巻き戻す。 */
   const navigate = useCallback(
     (id: string) => {
-      const nextTrail = trail[trail.length - 1] === id ? trail : [...trail, id].slice(-MAX_TRAIL);
-      commit({ ...route, center: id, path: null }, nextTrail, "push");
-      setTab("detail");
+      const { route, trail } = live.current;
       setPicking(null);
+      if (id === route.center && !route.pathOpen) return;
+      const at = trail.lastIndexOf(id);
+      const nextTrail = at >= 0 ? trail.slice(0, at + 1) : [...trail, id].slice(-MAX_TRAIL);
+      commit({ ...route, center: id, path: null, pathOpen: false }, nextTrail, "push");
+      clearDraft();
     },
-    [route, trail, commit],
+    [commit, clearDraft],
   );
 
   const jump = useCallback(
-    (index: number) => commit({ ...route, center: trail[index], path: null }, trail.slice(0, index + 1), "push"),
-    [route, trail, commit],
+    (index: number) => {
+      const { route, trail } = live.current;
+      if (!trail[index]) return;
+      commit({ ...route, center: trail[index], path: null, pathOpen: false }, trail.slice(0, index + 1), "push");
+      clearDraft();
+    },
+    [commit, clearDraft],
   );
 
   const goHome = () => {
-    commit({ center: null, depth: 1, filter: DEFAULT_FILTER, path: null }, [], "push");
+    commit(EMPTY_ROUTE, [], "push");
     setDraft({ from: null, to: null, mode: "bfs" });
-    setTab("detail");
     setPicking(null);
-    setSheetOpen(false);
+    setSheet("peek");
   };
 
   // ---- データ ----
@@ -102,8 +138,9 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    setViewError(false);
     if (!route.center) {
-      setView(null);
+      setShown(null);
       setNotFound(false);
       return;
     }
@@ -112,36 +149,36 @@ export function App() {
       (v) => {
         if (stale) return;
         setNotFound(!v);
-        if (v) {
-          setView(v);
-          visit(v.center);
-        }
+        setShown(v ? { view: v, trail: live.current.trail } : null);
+        if (v) visit(v.center);
       },
-      () => {},
+      () => !stale && setViewError(true),
     );
     return () => {
       stale = true;
     };
-  }, [route.center, route.depth, route.filter, visit]);
+  }, [route.center, route.depth, route.filter, trail, visit, attempt]);
 
   useEffect(() => {
     setPathData(null);
+    setPathError(false);
     if (!route.path) return;
     let stale = false;
     engine.path(route.path.from, route.path.to, route.path.mode, route.filter).then(
       (p) => !stale && setPathData(p),
-      () => {},
+      () => !stale && setPathError(true),
     );
     return () => {
       stale = true;
     };
   }, [route.path, route.filter]);
 
-  const atHome = !route.center && !route.path && tab !== "path";
+  const atHome = !route.center && !route.pathOpen;
   const heroId = heroOf(meta);
+  const wantHero = !route.center && !narrow && !!heroId;
   useEffect(() => {
-    // トップ画面の相関図（スマホでは出さない）。
-    if (!atHome || narrow || !heroId) return;
+    // トップ画面（と、中心が無いままの「つながりを調べる」）の相関図。スマホでは出さない。
+    if (!wantHero || !heroId) return;
     let stale = false;
     engine.view(heroId, 1, DEFAULT_FILTER).then(
       (v) => !stale && setHeroView(v),
@@ -150,7 +187,7 @@ export function App() {
     return () => {
       stale = true;
     };
-  }, [atHome, narrow, heroId]);
+  }, [wantHero, heroId]);
 
   // パンくず・お気に入り・履歴・トップの入口・経路の端点の表示名と画像をまとめて引く。
   const wanted = useMemo(() => {
@@ -162,48 +199,62 @@ export function App() {
   const known = (ids: string[]) => ids.map((id) => briefs.get(id)).filter((b): b is NodeBrief => !!b);
 
   // URL の経路を、経路パネルの入力欄に反映する（共有 URL を開いたとき・戻るで戻ったとき）。
+  // undefined はまだ引いている途中、null はデータに無い ID。
   const pathFrom = route.path ? briefs.get(route.path.from) : undefined;
   const pathTo = route.path ? briefs.get(route.path.to) : undefined;
   const pathMode = route.path?.mode;
+  const pathMissing = !!route.path && (pathFrom === null || pathTo === null);
   useEffect(() => {
-    if (pathFrom && pathTo && pathMode) setDraft({ from: pathFrom, to: pathTo, mode: pathMode });
+    if (pathMode && pathFrom !== undefined && pathTo !== undefined) setDraft({ from: pathFrom, to: pathTo, mode: pathMode });
   }, [pathFrom, pathTo, pathMode]);
 
   // ---- 経路 ----
   const updateDraft = (next: PathDraft) => {
+    const { route, trail } = live.current;
     setDraft(next);
     setPicking(null);
     if (next.from && next.to && next.from.id !== next.to.id) {
-      commit({ ...route, path: { from: next.from.id, to: next.to.id, mode: next.mode } }, trail, route.path ? "replace" : "push");
-      // スマホでは結果の図が見えるよう、シートは開いたままにして要約を読めるようにする。
-      setSheetOpen(true);
+      const path = { from: next.from.id, to: next.to.id, mode: next.mode };
+      // 「つながりを調べる」を開いたときに履歴を積んであるので、端点や探し方の変更は置き換えにする。
+      commit({ ...route, path, pathOpen: true }, trail, route.pathOpen ? "replace" : "push", true);
+      // スマホでは、結果の図と要約の両方が見える高さにする。
+      setSheet("half");
     } else if (route.path) {
-      commit({ ...route, path: null }, trail, "replace");
+      commit({ ...route, path: null, pathOpen: true }, trail, "replace");
     }
   };
 
-  /** 経路の画面を開く。始点を指定しなければ、今の中心を始点にする。 */
+  /** 「つながりを調べる」を開く。始点を指定しなければ、今の中心を始点にする。 */
   const openPath = (from?: NodeBrief | null, to?: NodeBrief | null) => {
-    setTab("path");
-    setSheetOpen(true);
+    const { route, trail } = live.current;
     if (from && to) {
-      updateDraft({ from, to, mode: draft.mode });
+      setDraft({ from, to, mode: draft.mode });
+      commit({ ...route, path: { from: from.id, to: to.id, mode: draft.mode }, pathOpen: true }, trail, "push", true);
+      setSheet("half");
       return;
     }
     const center = route.center ? briefs.get(route.center) : undefined;
     const start = from ?? (!draft.from && !draft.to ? center : undefined);
     if (start) setDraft({ ...draft, from: start });
+    if (!route.pathOpen) commit({ ...route, pathOpen: true }, trail, "push", true);
+    setSheet("full");
   };
 
   const clearPath = () => {
-    setDraft({ from: null, to: null, mode: draft.mode });
+    const { route, trail } = live.current;
+    clearDraft();
     setPicking(null);
-    if (route.path) commit({ ...route, path: null }, trail, "push");
+    if (route.path) commit({ ...route, path: null, pathOpen: true }, trail, "replace");
   };
 
+  /** 「つながりを調べる」を閉じる。開いたときに積んだ履歴なら 1 つ戻り、そうでなければその場で閉じる。 */
   const closePath = () => {
-    clearPath();
-    setTab("detail");
+    const { route, trail } = live.current;
+    setPicking(null);
+    clearDraft();
+    setSheet("peek");
+    if ((history.state as HistoryState | null)?.opened) history.back();
+    else commit({ ...route, path: null, pathOpen: false }, trail, "replace");
   };
 
   const dismissHint = () => {
@@ -215,45 +266,83 @@ export function App() {
   const onNodeClick = (node: SceneNode) => {
     dismissHint();
     if (picking && node.kind !== "more") {
+      // もう片方の端と同じノードは選べない（選ぶ状態のまま、別のノードを待つ）。
+      const other = picking === "from" ? draft.to : draft.from;
+      if (other?.id === node.id) return;
       updateDraft({ ...draft, [picking]: { id: node.id, label: node.label, kind: node.kind, image: node.image } });
-      setSheetOpen(true);
       return;
     }
     navigate(node.target);
-    if (node.kind === "more") setSheetOpen(true);
+    if (node.kind === "more") setSheet("full");
   };
 
   const random = () => {
     void engine.randomVoiceActor().then((id) => id && navigate(id));
   };
 
+  // Esc: 図から選ぶのをやめる。スマホでは、開いているシートを畳む。
+  useEffect(() => {
+    if (!picking && !(narrow && sheet !== "peek")) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector("dialog[open], .popover")) return;
+      if (picking) setPicking(null);
+      else setSheet("peek");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picking, narrow, sheet]);
+
   // ---- 場面 ----
   const showingPath = !!route.path && !!pathData?.found;
   const scene = useMemo(() => {
     const layout = { portrait: narrow };
     if (route.path && pathData?.found) return sceneFromPath(pathData, layout);
-    if (route.center) return view ? sceneFromView(view, trail, layout) : null;
+    if (route.center) return shown ? sceneFromView(shown.view, shown.trail, layout) : null;
     // トップ画面（と、中心が無いままの経路画面）では日替わりの相関図を見せる。
     return heroView && !narrow ? sceneFromView(heroView, []) : null;
-  }, [route.path, route.center, pathData, view, heroView, trail, narrow]);
+  }, [route.path, route.center, pathData, shown, heroView, narrow]);
 
   const centerBrief = route.center ? briefs.get(route.center) : undefined;
+  const sameEnds = !!route.path && route.path.from === route.path.to;
   useEffect(() => {
-    document.title = route.path && pathFrom && pathTo
+    document.title = route.path && pathFrom && pathTo && !sameEnds
       ? `${pathFrom.label} と ${pathTo.label} のつながり | CVerse`
-      : centerBrief
-        ? `${centerBrief.label} の相関図 | CVerse`
-        : "CVerse | 声優・キャラ・作品の相関図";
-  }, [centerBrief, route.path, pathFrom, pathTo]);
+      : route.pathOpen && !centerBrief
+        ? "つながりを調べる | CVerse"
+        : centerBrief
+          ? `${centerBrief.label} の相関図 | CVerse`
+          : "CVerse | 声優・キャラ・作品の相関図";
+  }, [centerBrief, route.path, route.pathOpen, pathFrom, pathTo, sameEnds]);
 
-  const setDepth = (depth: number) => commit({ ...route, depth }, trail, "replace");
-  const setFilter = (filter: Filter) => commit({ ...route, filter }, trail, "replace");
-  const suggestions = useMemo(() => {
-    const ids = [...new Set([...visited, ...favorites])].slice(0, 8);
-    return ids.map((id) => briefs.get(id)).filter((b): b is NodeBrief => !!b);
-    // briefs は同じ Map を使い回すので、中身が届いたことは wanted の変化で拾う。
+  // 中心が変わったら、読み上げで知らせ、詳細を先頭から見せる。押した項目が消えてフォーカスの行き場が
+  // 無くなったときは、詳細パネルへ移す（キーボードで続けて辿れるように）。
+  const announced = useRef(route.center);
+  useEffect(() => {
+    if (!centerBrief || announced.current === centerBrief.id) return;
+    announced.current = centerBrief.id;
+    setAnnouncement(`${centerBrief.label}を中心に表示しました`);
+    if (bodyRef.current) bodyRef.current.scrollTop = 0;
+    const frame = requestAnimationFrame(() => {
+      if (!document.activeElement || document.activeElement === document.body) panelRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [centerBrief]);
+
+  const setDepth = (depth: number) => commit({ ...live.current.route, depth }, live.current.trail, "replace");
+  const setFilter = (filter: Filter) => commit({ ...live.current.route, filter }, live.current.trail, "replace");
+  const filtered = !isDefaultFilter(route.filter);
+  const suggestionKey = [...new Set([...visited, ...favorites])].slice(0, 8).join("\n");
+  const suggestions = useMemo(
+    () => (suggestionKey ? suggestionKey.split("\n") : []).map((id) => briefs.get(id)).filter((b): b is NodeBrief => !!b),
+    // briefs は同じ Map を使い回すので、中身が届いたことは件数の変化で拾う。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visited, favorites, briefs, briefs.size]);
+    [suggestionKey, briefs, briefs.size],
+  );
+  const crumbs: Crumb[] = trail.flatMap((id, index) => {
+    const node = briefs.get(id);
+    return node ? [{ node, index }] : [];
+  });
 
   if (bootError) {
     return (
@@ -271,11 +360,18 @@ export function App() {
 
   const hero = heroId ? (briefs.get(heroId) ?? null) : null;
   const sheetTitle = tab === "path" ? "つながりを調べる" : (centerBrief?.label ?? "詳細");
+  const sheetOpen = sheet !== "peek";
+  // シートのつまみ: 押すと開閉、上下に引くと 1 段ずつ動く。
+  const drag = { y: 0, moved: false };
+  const order: Sheet[] = ["peek", "half", "full"];
   return (
-    <div className={`app${atHome ? " app--home" : ""}${sheetOpen ? " app--sheet-open" : ""}`}>
-      <a className="skip-link" href="#panel">
+    <div className={`app${atHome ? " app--home" : ""} app--sheet-${sheet}`}>
+      <a className="skip-link" href={atHome ? "#home" : "#panel"}>
         本文へ移動
       </a>
+      <p className="sr-only" role="status">
+        {announcement}
+      </p>
       <header className="topbar">
         <a
           className="brand"
@@ -293,7 +389,7 @@ export function App() {
         {!atHome && (
           <SearchBox
             label="声優・キャラ・作品を検索"
-            placeholder="声優・キャラ・作品を検索"
+            placeholder={narrow ? "名前で検索" : "声優・キャラ・作品を検索"}
             onPick={(n) => navigate(n.id)}
             suggestions={suggestions}
             suggestionsLabel="最近見た・お気に入り"
@@ -302,16 +398,28 @@ export function App() {
         )}
         <nav className="topbar__nav" aria-label="メニュー">
           {!atHome && (
-            <button type="button" className={`nav-button${tab === "path" ? " is-on" : ""}`} aria-pressed={tab === "path"} onClick={() => (tab === "path" ? closePath() : openPath())}>
+            <button
+              type="button"
+              className={`nav-button${tab === "path" ? " is-on" : ""}`}
+              aria-pressed={tab === "path"}
+              aria-label="つながりを調べる"
+              title="つながりを調べる"
+              onClick={() => (tab === "path" ? closePath() : openPath())}
+            >
               <Icon name="route" />
-              <span className="nav-button__label">つながりを調べる</span>
+              <span className="nav-button__label" aria-hidden="true">
+                つながりを調べる
+              </span>
             </button>
           )}
           <MyList
             favorites={known(favorites)}
             history={known(visited)}
             onPick={navigate}
+            onRemoveFavorite={toggleFavorite}
             onClearHistory={clearHistory}
+            onRestoreHistory={restoreHistory}
+            historyIds={visited}
             theme={theme}
             onToggleTheme={toggleTheme}
             onAbout={() => setAboutOpen(true)}
@@ -325,19 +433,11 @@ export function App() {
         </nav>
       </header>
 
-      <main className="stage">
-        <GraphView
-          scene={scene}
-          onNodeClick={onNodeClick}
-          picking={picking !== null}
-          theme={theme}
-          zoomControls={!atHome}
-          label={
-            showingPath
-              ? "2 つのノードをつなぐ経路の図。内容は「つながりを調べる」の一覧にもあります。"
-              : `${(atHome ? hero?.label : centerBrief?.label) ?? ""}の相関図。内容は詳細の一覧にもあります。`
-          }
-        />
+      <main
+        className="stage"
+        // スマホ: シートをいっぱいに開いているとき、上に見えている図を押したら畳む。
+        onPointerDown={narrow && sheet === "full" && !atHome ? () => setSheet("peek") : undefined}
+      >
         {atHome ? (
           <Home
             meta={meta}
@@ -346,6 +446,7 @@ export function App() {
             favorites={known(favorites)}
             history={known(visited)}
             hero={narrow ? null : hero}
+            compact={narrow}
             onNavigate={navigate}
             onRandom={random}
             onPath={openPath}
@@ -354,19 +455,25 @@ export function App() {
         ) : (
           <>
             <div className="stage__top">
-              {!showingPath && route.center && <Breadcrumbs trail={known(trail)} onJump={jump} />}
-              {!showingPath && route.center && <Controls depth={route.depth} onDepth={setDepth} filter={route.filter} onFilter={setFilter} />}
-            </div>
-            <Legend />
-            <div className="stage__notes" aria-live="polite">
-              {showingPath && (
-                <p className="note">
-                  経路を表示しています
-                  <button type="button" className="link" onClick={closePath}>
-                    {route.center ? "相関図に戻る" : "閉じる"}
-                  </button>
+              {!showingPath && route.center && !notFound && <Breadcrumbs crumbs={crumbs} current={trail.length - 1} onJump={jump} />}
+              {!showingPath && route.center && !notFound && <Controls depth={route.depth} onDepth={setDepth} filter={route.filter} onFilter={setFilter} />}
+              {!route.center && !showingPath && hero && scene && (
+                <p className="stage__caption">
+                  今日の相関図: <strong>{hero.label}</strong>
                 </p>
               )}
+            </div>
+            {scene && <Legend />}
+            {notFound && (
+              <div className="stage__empty" role="alert">
+                <h1>このページは見つかりませんでした</h1>
+                <p>データの更新で、名前や ID が変わった可能性があります。上の検索欄から探し直してください。</p>
+                <button type="button" className="button button--primary" onClick={goHome}>
+                  トップへ戻る
+                </button>
+              </div>
+            )}
+            <div className="stage__notes" aria-live="polite">
               {picking && (
                 <p className="note note--accent">
                   {picking === "from" ? "始点" : "終点"}にするノードを押してください
@@ -375,20 +482,22 @@ export function App() {
                   </button>
                 </p>
               )}
-              {notFound && (
+              {viewError && (
                 <p className="note" role="alert">
-                  「{route.center}」は見つかりませんでした。
-                  <button type="button" className="link" onClick={goHome}>
-                    トップへ戻る
+                  相関図を読み込めませんでした。
+                  <button type="button" className="link" onClick={() => setAttempt((n) => n + 1)}>
+                    もう一度読み込む
                   </button>
                 </p>
               )}
-              {view && route.center && !notFound && !showingPath && view.nodes.length === 1 && (
+              {shown && route.center && !notFound && !showingPath && shown.view.center === route.center && shown.view.nodes.length === 1 && (
                 <p className="note">
-                  この条件ではつながるノードがありません。
-                  <button type="button" className="link" onClick={() => setFilter(DEFAULT_FILTER)}>
-                    絞り込みを外す
-                  </button>
+                  {filtered ? "この条件ではつながるノードがありません。" : "つながるノードがまだ収録されていません。"}
+                  {filtered && (
+                    <button type="button" className="link" onClick={() => setFilter(DEFAULT_FILTER)}>
+                      絞り込みを外す
+                    </button>
+                  )}
                 </p>
               )}
               {hint && route.center && !showingPath && !picking && !notFound && (
@@ -402,45 +511,107 @@ export function App() {
             </div>
           </>
         )}
+        {/* 図は最後に置く（Tab の順番を、左上の操作 → 図の拡大・縮小 の順にするため）。 */}
+        <ErrorBoundary name="相関図">
+          <GraphView
+            scene={scene}
+            onNodeClick={onNodeClick}
+            picking={picking !== null}
+            theme={theme}
+            zoomControls={!atHome && !!scene}
+            label={
+              showingPath
+                ? "2 つのノードをつなぐ経路の図。内容は「つながりを調べる」の一覧にもあります。"
+                : `${(route.center ? centerBrief?.label : hero?.label) ?? ""}の相関図。内容は詳細の一覧にもあります。`
+            }
+          />
+        </ErrorBoundary>
       </main>
 
       {!atHome && (
-        <aside className="panel" id="panel" aria-label={sheetTitle} tabIndex={-1}>
-          <button type="button" className="panel__handle" aria-expanded={sheetOpen} onClick={() => setSheetOpen((v) => !v)}>
+        <aside className="panel" id="panel" aria-label={sheetTitle} tabIndex={-1} ref={panelRef}>
+          <button
+            type="button"
+            className="panel__handle"
+            aria-expanded={sheetOpen}
+            aria-label={`${sheetTitle}（${sheetOpen ? "閉じる" : "開く"}）`}
+            onPointerDown={(e) => {
+              drag.y = e.clientY;
+              drag.moved = false;
+              e.currentTarget.setPointerCapture(e.pointerId);
+            }}
+            onPointerUp={(e) => {
+              const dy = e.clientY - drag.y;
+              if (Math.abs(dy) < 24) return;
+              drag.moved = true;
+              const at = order.indexOf(sheet);
+              setSheet(order[Math.max(0, Math.min(order.length - 1, at + (dy < 0 ? 1 : -1)))]);
+            }}
+            onClick={() => {
+              if (drag.moved) {
+                drag.moved = false;
+                return;
+              }
+              setSheet(sheet === "full" ? "peek" : "full");
+            }}
+          >
             <span className="panel__grip" aria-hidden="true" />
             <span className="panel__peek">
-              {sheetTitle}
-              <span className="sr-only">{sheetOpen ? "（閉じる）" : "（開く）"}</span>
+              {tab === "detail" && centerBrief ? (
+                <>
+                  <Thumb kind={centerBrief.kind} src={centerBrief.image} label={centerBrief.label} size={28} />
+                  <span className="panel__peek-text">
+                    <strong>{centerBrief.label}</strong>
+                    <small>{centerBrief.kind === "more" ? "" : KIND_LABEL[centerBrief.kind]}の詳細</small>
+                  </span>
+                </>
+              ) : (
+                <span className="panel__peek-text">
+                  <strong>{sheetTitle}</strong>
+                  {showingPath && pathData && <small>{pathData.hops}回たどる道が見つかりました</small>}
+                </span>
+              )}
+              <Icon name="chevron" size={16} />
             </span>
           </button>
-          <div className="panel__body">
-            {tab === "path" ? (
-              <PathPanel
-                draft={draft}
-                onDraft={updateDraft}
-                result={route.path ? pathData : null}
-                picking={picking}
-                onPicking={(which) => {
-                  setPicking(which);
-                  if (which) setSheetOpen(false);
-                }}
-                onNavigate={navigate}
-                onClear={clearPath}
-                suggestions={suggestions}
-                canPick={!!scene && !showingPath}
-              />
-            ) : meta && route.center && !notFound ? (
-              <DetailPanel
-                meta={meta}
-                id={route.center}
-                onNavigate={navigate}
-                isFavorite={favorites.includes(route.center)}
-                onToggleFavorite={() => toggleFavorite(route.center!)}
-                onStartPath={() => openPath(centerBrief ?? null)}
-              />
-            ) : (
-              <p className="panel__msg">{notFound ? "ノードが見つかりません。" : "読み込み中…"}</p>
-            )}
+          <div className="panel__body" ref={bodyRef} inert={narrow && !sheetOpen}>
+            <ErrorBoundary name={tab === "path" ? "つながり" : "詳細"} resetKey={`${tab}:${route.center}`}>
+              {tab === "path" ? (
+                <PathPanel
+                  draft={draft}
+                  onDraft={updateDraft}
+                  result={route.path ? pathData : null}
+                  searching={!!route.path && !pathData && !pathError && !pathMissing}
+                  failed={pathError}
+                  missing={pathMissing}
+                  filtered={filtered}
+                  onClearFilter={() => setFilter(DEFAULT_FILTER)}
+                  onClose={closePath}
+                  picking={picking}
+                  onPicking={(which) => {
+                    setPicking(which);
+                    if (which) setSheet("peek");
+                  }}
+                  onNavigate={navigate}
+                  onClear={clearPath}
+                  suggestions={suggestions}
+                  canPick={!!scene && !showingPath}
+                />
+              ) : meta && route.center && !notFound ? (
+                <DetailPanel
+                  meta={meta}
+                  id={route.center}
+                  onNavigate={navigate}
+                  isFavorite={favorites.includes(route.center)}
+                  onToggleFavorite={() => toggleFavorite(route.center!)}
+                  onStartPath={() => openPath(centerBrief ?? null)}
+                  filtered={filtered}
+                  onClearFilter={() => setFilter(DEFAULT_FILTER)}
+                />
+              ) : (
+                <p className="panel__msg">{notFound ? "上の検索欄から、声優・キャラ・作品を探せます。" : "読み込み中…"}</p>
+              )}
+            </ErrorBoundary>
           </div>
         </aside>
       )}

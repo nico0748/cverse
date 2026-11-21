@@ -9,6 +9,7 @@
 - グラフの中核（CSR・最短経路・近傍抽出・検索）は Rust の 1 クレートにまとめ、データ生成（ネイティブ）と
   ブラウザ（WASM / Web Worker）の両方で同じコードを使う
 - 設計の考え方と計測結果: [docs/design.md](docs/design.md)
+- デザインの約束（色・文字・形・動線）: [docs/design-system.md](docs/design-system.md)
 - 収集データの形式: [docs/data-schema.md](docs/data-schema.md)
 
 ## 構成
@@ -39,7 +40,7 @@ npm run dev      # http://localhost:5173
 
 実データで動かすときは `CVERSE_DATA=source npm run data`。
 画像を載せる範囲はビルド時に選べる（`cargo run --release -p cverse-cli -- build data/source --out web/public/data --images licensed`。
-`all` が既定、`licensed` はライセンス表記のある画像だけ、`none` は画像なし）。
+`all` が既定、`licensed` は再利用できるライセンス（パブリックドメイン、CC0、クレジット付きの CC BY / CC BY-SA）の画像だけ、`none` は画像なし）。
 
 | コマンド | 内容 |
 |---|---|
@@ -80,6 +81,7 @@ GitHub Actions、Cloudflare Pages へのデプロイ設定。
 - 各ノードに取得元と取得日を持たせ、詳細パネルに表示する
 - キャラ・声優・作品の画像は、データに `image` があれば表示する。画像はこのサイトに保存せず、出典元の URL を直接参照し、
   出典とクレジットを詳細パネルに出す。著作権は各権利者にある。画像が無いノードは頭文字のアイコンになる
-- 画像を載せたくない場合や、ライセンスが明示されたものだけにしたい場合は、ビルド時の `--images none` / `--images licensed` で切り替える
+- 画像を載せたくない場合や、再利用できるライセンスのものだけにしたい場合は、ビルド時の `--images none` / `--images licensed` で切り替える。
+  `licensed` で残るのは、パブリックドメイン・CC0 と、作者名か掲載元ページのある CC BY / CC BY-SA だけ（非営利限定や改変禁止は含めない）
 - `data/sample/images/` は自動生成した仮の絵（CC0）。実在の人物・作品の画像ではない
 - `data/sample/` は動作確認用の手書きデータで、お気に入り数・人気は仮の値

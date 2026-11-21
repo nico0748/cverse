@@ -103,7 +103,7 @@ function moreNodes(view: ViewData): ViewNode[] {
     const slot = ofCenter && center?.kind === "ch" ? Slot.Bottom : Slot.Ring;
     return {
       id: `more:${parent}`,
-      label: `他 ${count} 件`,
+      label: `他${count}件`,
       kind: "more",
       level: 1,
       slot,

@@ -44,8 +44,8 @@ export function About({ open, onClose, meta }: { open: boolean; onClose: () => v
             ))}
           </ul>
           <p>
-            種類は色と形の両方で区別しています。線は「声優がキャラを演じている」「キャラが作品に登場している」というつながりです。
-            キャラを中心にすると、担当声優が上、登場作品が下に並びます。
+            種類は色と形の両方で区別しています。橙の線は「声優がキャラを演じている」、墨色の線は「キャラが作品に登場している」
+            というつながりで、主役は太い線、脇役は細い線です。キャラを中心にすると、担当声優が上、登場作品が下に並びます。
           </p>
         </section>
 
@@ -77,8 +77,8 @@ export function About({ open, onClose, meta }: { open: boolean; onClose: () => v
           </p>
           {meta && (
             <p className="muted">
-              声優 {meta.counts.voiceActors.toLocaleString()} 人、キャラ {meta.counts.characters.toLocaleString()} 人、作品{" "}
-              {meta.counts.works.toLocaleString()} 本を収録{meta.dataDate && `（${meta.dataDate} 取得）`}。
+              声優{meta.counts.voiceActors.toLocaleString()}人、キャラ{meta.counts.characters.toLocaleString()}人、作品
+              {meta.counts.works.toLocaleString()}本を収録{meta.dataDate && `（${meta.dataDate} 取得）`}。
             </p>
           )}
           <p>
@@ -90,8 +90,9 @@ export function About({ open, onClose, meta }: { open: boolean; onClose: () => v
         <section>
           <h3>画像</h3>
           <p>
-            画像はこのサイトに保存せず、出典元のものをそのまま表示しています。著作権は各権利者にあります。
-            出典とクレジットは詳細の画像の下に表示します。掲載に問題がある場合は GitHub の Issue でお知らせください。
+            外部の画像は、このサイトに複製を置かず、出典元のものをそのまま表示しています（利用が許諾されていて
+            データに同梱した画像を除きます）。著作権は各権利者にあります。出典とクレジットは、詳細の末尾の「出典と外部リンク」に
+            表示します。掲載に問題がある場合は GitHub の Issue でお知らせください。
           </p>
         </section>
 

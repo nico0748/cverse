@@ -43,10 +43,9 @@ const PAIRS: [string, string, number][] = [
   ["--ink-2", "--surface-2", 4.5],
   ["--ink-2", "--surface-3", 4.5],
   ["--ink-3", "--surface", 4.5],
-  ["--link", "--surface", 4.5],
-  ["--link", "--ground", 4.5],
+  // 図の上の案内・ツールチップ（反転した面）
+  ["--on-inverse", "--inverse", 7],
   // 選択中・強調
-  ["--ground", "--ink", 7],
   ["--on-accent", "--accent", 4.5],
   ["--accent-ink", "--accent-soft", 4.5],
   ["--accent-ink", "--surface", 4.5],
@@ -66,6 +65,8 @@ const PAIRS: [string, string, number][] = [
   ["--line-strong", "--ground", 3],
   ["--accent", "--ground", 3],
   ["--accent", "--surface", 3],
+  // リンクの下線・図の上に浮かぶ部品の枠
+  ["--inverse-line", "--ground", 3],
 ];
 
 describe.each(themes)("%s", (_name, t) => {

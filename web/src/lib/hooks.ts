@@ -56,9 +56,9 @@ export function useBriefs(ids: string[]): Map<string, NodeBrief | null> {
   return briefCache;
 }
 
-/** 画面幅が狭い（スマホ）かどうか。styles.css の区切りと同じ値。 */
+/** 縦長の狭い画面（スマホ）かどうか。styles.css の区切りと同じ条件。横向きのスマホは含めない。 */
 export function useNarrow(): boolean {
-  const query = "(max-width: 860px)";
+  const query = "(max-width: 860px) and (orientation: portrait), (max-width: 560px)";
   const [narrow, setNarrow] = useState(() => matchMedia(query).matches);
   useEffect(() => {
     const mq = matchMedia(query);

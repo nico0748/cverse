@@ -28,14 +28,22 @@ export function SearchBox({ onPick, placeholder, hotkey, autoFocus, label, sugge
   const [searched, setSearched] = useState("");
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState(false);
+  const [failed, setFailed] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  /** 結果が届く前に Enter が押されたら、届いたときに先頭を選ぶ。 */
+  const pendingEnter = useRef(false);
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
   const listId = useId();
   const typed = query.trim() !== "";
 
   useEffect(() => {
+    pendingEnter.current = false;
     if (!typed) {
       setResults([]);
       setSearched("");
+      setFailed(false);
       return;
     }
     let stale = false;
@@ -45,9 +53,22 @@ export function SearchBox({ onPick, placeholder, hotkey, autoFocus, label, sugge
           if (stale) return;
           setResults(r);
           setSearched(query);
+          setFailed(false);
           setActive(0);
+          if (pendingEnter.current && r[0]) {
+            pendingEnter.current = false;
+            setQuery("");
+            setOpen(false);
+            inputRef.current?.blur();
+            onPickRef.current(r[0]);
+          }
         },
-        () => !stale && setResults([]),
+        () => {
+          if (stale) return;
+          setResults([]);
+          setSearched(query);
+          setFailed(true);
+        },
       );
     }, 60);
     return () => {
@@ -79,8 +100,28 @@ export function SearchBox({ onPick, placeholder, hotkey, autoFocus, label, sugge
   const items = typed ? results : suggestions;
   const showList = open && (typed || suggestions.length > 0);
   const waiting = typed && searched !== query;
+
+  // ↑↓ で選んでいる候補が、一覧の見えている範囲に入るようにする。
+  useEffect(() => {
+    if (showList) document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: "nearest" });
+  }, [active, showList, listId]);
+
   return (
-    <div className={`search${large ? " search--large" : ""}`}>
+    <div
+      ref={boxRef}
+      className={`search${large ? " search--large" : ""}`}
+      // 種類のボタンへ Tab で移っても開いたままにし、検索欄の外へ出たら閉じる。
+      onBlur={(e) => {
+        if (!boxRef.current?.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && e.target !== inputRef.current && open) {
+          e.stopPropagation();
+          setOpen(false);
+          inputRef.current?.focus();
+        }
+      }}
+    >
       <span className="search__icon">
         <Icon name="search" size={large ? 20 : 16} />
       </span>
@@ -106,10 +147,12 @@ export function SearchBox({ onPick, placeholder, hotkey, autoFocus, label, sugge
           setOpen(true);
           setActive(0);
         }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
+        // フォーカスが当たっただけでは開かない（トップ画面を開くたびに候補が被さらないように）。
+        // 押す・入力する・↓ で開く。
+        onMouseDown={() => setOpen(true)}
         onKeyDown={(e) => {
-          if (e.nativeEvent.isComposing) return; // 日本語入力の変換確定の Enter は無視
+          // 日本語入力の変換確定の Enter は無視する。Safari は確定の keydown を変換終了のあとに送るので、keyCode も見る。
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
           if (e.key === "ArrowDown") {
             e.preventDefault();
             setOpen(true);
@@ -117,11 +160,18 @@ export function SearchBox({ onPick, placeholder, hotkey, autoFocus, label, sugge
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
             setActive((a) => Math.max(a - 1, 0));
+          } else if (e.key === "Enter" && waiting) {
+            // まだ前の文字の結果が出ている。新しい結果が届いてから先頭を選ぶ。
+            e.preventDefault();
+            pendingEnter.current = true;
           } else if (e.key === "Enter" && showList && items[active]) {
             e.preventDefault();
             pick(items[active]);
           } else if (e.key === "Escape") {
-            if (open && showList) setOpen(false);
+            // 1 回目で候補を閉じ、2 回目で入力を消し、3 回目で検索欄から出る。
+            e.preventDefault();
+            if (showList) setOpen(false);
+            else if (query) setQuery("");
             else inputRef.current?.blur();
           }
         }}
@@ -136,7 +186,6 @@ export function SearchBox({ onPick, placeholder, hotkey, autoFocus, label, sugge
                 <button
                   key={k ?? "all"}
                   type="button"
-                  tabIndex={-1}
                   className={`seg${kind === k ? " is-on" : ""}`}
                   aria-pressed={kind === k}
                   onClick={() => setKind(k)}
@@ -168,7 +217,12 @@ export function SearchBox({ onPick, placeholder, hotkey, autoFocus, label, sugge
               </li>
             ))}
           </ul>
-          {typed && !waiting && results.length === 0 && (
+          {typed && !waiting && failed && (
+            <p className="search__empty" role="alert">
+              検索できませんでした。ページを読み込み直してください。
+            </p>
+          )}
+          {typed && !waiting && !failed && results.length === 0 && (
             <p className="search__empty" role="status">
               「{query.trim()}」に一致する{kind ? KIND_LABEL[kind] : "名前"}はありません。
               <br />

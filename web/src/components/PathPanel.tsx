@@ -23,6 +23,17 @@ interface Props {
   suggestions: NodeBrief[];
   /** グラフが表示されているか（「グラフから選ぶ」を出すか）。 */
   canPick: boolean;
+  /** 経路を探している最中か。 */
+  searching: boolean;
+  /** 経路の探索に失敗したか。 */
+  failed: boolean;
+  /** 開いた URL の始点か終点が、データに無い。 */
+  missing: boolean;
+  /** 絞り込みの条件がかかっているか（経路の探索にも効く）。 */
+  filtered: boolean;
+  onClearFilter: () => void;
+  /** この画面を閉じて、相関図に戻る。 */
+  onClose: () => void;
 }
 
 const MODE_HELP: Record<PathMode, string> = {
@@ -80,10 +91,28 @@ function Endpoint({
 }
 
 /** 最短経路（F-10）。2 つのノードを選ぶと、つながる道と「共演で何ステップ」を表示する。 */
-export function PathPanel({ draft, onDraft, result, picking, onPicking, onNavigate, onClear, suggestions, canPick }: Props) {
+export function PathPanel({
+  draft,
+  onDraft,
+  result,
+  picking,
+  onPicking,
+  onNavigate,
+  onClear,
+  suggestions,
+  canPick,
+  searching,
+  failed,
+  missing,
+  filtered,
+  onClearFilter,
+  onClose,
+}: Props) {
   const [copied, setCopied] = useState(false);
   const ready = draft.from && draft.to;
   const same = ready && draft.from!.id === draft.to!.id;
+  // 「共演」は声優どうしの数え方。作品やキャラが端のときは、たどる回数で言う。
+  const people = draft.from?.kind === "va" && draft.to?.kind === "va";
 
   const copy = async () => {
     try {
@@ -97,7 +126,12 @@ export function PathPanel({ draft, onDraft, result, picking, onPicking, onNaviga
 
   return (
     <div className="path">
-      <h2 className="path__title">つながりを調べる</h2>
+      <div className="path__head">
+        <h1 className="path__title">つながりを調べる</h1>
+        <button type="button" className="icon-button" aria-label="つながりを調べるのをやめて、相関図に戻る" title="閉じる" onClick={onClose}>
+          <Icon name="close" />
+        </button>
+      </div>
       <p className="muted">2 つ選ぶと、共演や出演をたどっていちばん近い道を探します。声優・キャラ・作品のどれでも選べます。</p>
 
       <div className="path__ends">
@@ -145,31 +179,56 @@ export function PathPanel({ draft, onDraft, result, picking, onPicking, onNaviga
         </div>
         <p className="hint">{MODE_HELP[draft.mode]}</p>
       </fieldset>
+      {filtered && (
+        <p className="filter-note">
+          相関図の絞り込みが、ここにも効いています。
+          <button type="button" className="link" onClick={onClearFilter}>
+            絞り込みを外す
+          </button>
+        </p>
+      )}
 
       <div aria-live="polite" className="path__result">
+        {missing && (
+          <p className="panel__msg" role="alert">
+            この URL の始点か終点が見つかりませんでした。データの更新で変わった可能性があります。選び直してください。
+          </p>
+        )}
         {same && <p className="panel__msg">始点と終点が同じです。別の相手を選んでください。</p>}
-        {ready && !same && !result && <p className="panel__msg">探しています…</p>}
+        {ready && !same && searching && <p className="panel__msg">探しています…</p>}
+        {ready && !same && failed && (
+          <p className="panel__msg" role="alert">
+            探している途中で問題が起きました。ページを読み込み直してください。
+          </p>
+        )}
         {ready && !same && result && !result.found && (
           <p className="panel__msg">
             この条件ではつながる道が見つかりませんでした。
-            {draft.mode === "main" ? "探し方を「最短」か「主役を優先」に変えると見つかることがあります。" : "絞り込みを外すと見つかることがあります。"}
+            {draft.mode === "main"
+              ? "探し方を「最短」か「主役を優先」に変えると見つかることがあります。"
+              : filtered
+                ? "上の「絞り込みを外す」で見つかることがあります。"
+                : "この 2 つは、収録しているデータの中ではつながっていません。"}
           </p>
         )}
         {result?.found && !same && (
           <>
             <p className="path__summary">
-              <strong>
-                {result.costar > 0 ? (
-                  <>
-                    共演で <span className="path__steps">{result.costar}</span> ステップ
-                  </>
-                ) : (
-                  "直接つながっています"
-                )}
-              </strong>
+              {result.hops <= 1 ? (
+                <strong>直接つながっています</strong>
+              ) : people && result.costar > 0 ? (
+                <strong>
+                  共演で<span className="path__steps">{result.costar}</span>ステップ
+                </strong>
+              ) : (
+                <strong>
+                  <span className="path__steps">{result.hops}</span>回たどるとつながります
+                </strong>
+              )}
               <span className="muted">
-                ノードを {result.hops} 回たどります（{result.visited.toLocaleString()} ノードを{" "}
-                {result.ms < 1 ? "1 ミリ秒未満" : `${result.ms.toFixed(1)} ミリ秒`}で探索）
+                {people && result.costar > 0
+                  ? `同じ作品に出た人を${result.costar}回たどった道です。`
+                  : "下の順にたどれます。"}
               </span>
             </p>
             <ol className="chain">

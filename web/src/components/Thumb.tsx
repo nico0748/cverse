@@ -8,24 +8,25 @@ interface Props {
   /** 頭文字を取る名前。 */
   label: string;
   size?: number;
-  /** 作品を縦長（ポスターの比率）で見せる。 */
-  poster?: boolean;
+  /** 名鑑の写真のように、縦長（3:4）の枠で見せる（詳細の見出し）。 */
+  portrait?: boolean;
   /** 画面外でも先に読み込む（最初に目に入る大きな画像）。 */
   eager?: boolean;
 }
 
 /**
- * ノードの絵。種類の形（丸・角丸・四角）に切り抜き、種類の色で縁取る。
+ * ノードの絵。種類の形（丸・角丸の四角・縦長の四角）に切り抜き、種類の色で縁取る。
+ * `size` は幅。作品はポスターの比率（3:4）なので、高さはその 4/3 になる。
  * 名前は必ず隣に文字で出すので、画像そのものには代替テキストを付けない。
  */
-export function Thumb({ kind, src, label, size = 36, poster = false, eager = false }: Props) {
+export function Thumb({ kind, src, label, size = 36, portrait = false, eager = false }: Props) {
   const [failed, setFailed] = useState<string | null>(null);
   const show = src && failed !== src;
   const initial = kind === "more" ? "…" : (Array.from(label.trim())[0] ?? "?");
   return (
     <span
-      className={`thumb thumb--${kind}${poster ? " thumb--poster" : ""}`}
-      style={{ width: size, height: poster ? Math.round(size * 1.4) : size, fontSize: Math.round(size * 0.46) }}
+      className={`thumb thumb--${kind}${portrait ? " thumb--portrait" : ""}`}
+      style={{ width: size, height: kind === "wk" || portrait ? Math.round((size * 4) / 3) : size, fontSize: Math.round(size * 0.46) }}
       aria-hidden="true"
     >
       {show ? (

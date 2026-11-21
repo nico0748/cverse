@@ -33,18 +33,22 @@
   --ch: #1a7fc4;
   --ch-tint: #dcecf9;
   --ch-ink: #0d4f7e;
-  --wk: #0d8a66;
+  --wk: #0b6e52; /* 3 色の明るさをずらしてある（色の見分けが難しくても区別できるように） */
   --wk-tint: #d7f0e7;
   --wk-ink: #075440;
   --more: #7b849b;
   --more-tint: #e6eaf2;
   --more-ink: #4a5570;
-  --link: #1d4fc4;
+  /* 反転した面（図の上の案内・ツールチップ）。暗い配色では、白い板にならないよう一段明るい面にする */
+  --inverse: #141b2f;
+  --on-inverse: #eef1f6;
+  --inverse-line: #141b2f;
   --shadow-1: 0 1px 2px rgba(20, 27, 47, 0.1);
   --shadow-2: 0 2px 6px rgba(20, 27, 47, 0.08), 0 12px 32px rgba(20, 27, 47, 0.14);
   --scrim: rgba(20, 27, 47, 0.42);
 
-  --font-ui: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+  /* 本文は端末の書体（Windows は BIZ UDP ゴシック、Apple はヒラギノ、Android は Noto）。Web フォントは見出しの明朝だけ */
+  --font-ui: "BIZ UDPGothic", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", "Noto Sans JP", system-ui, sans-serif;
   --font-display: "Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif;
   /* 文字の大きさ（1.2 倍刻み）。本文 15px、注記は 12px より小さくしない */
   --fs-xs: 12px;
@@ -57,7 +61,7 @@
   --r-control: 8px;
   --r-pop: 12px;
   --r-sheet: 18px;
-  --panel-width: 420px;
+  --panel-width: clamp(340px, 32vw, 420px);
   --topbar: 56px;
   --hit: 36px; /* 押せるものの最小の高さ（タッチ端末では 44px） */
 }
@@ -90,7 +94,9 @@
   --more: #7a84a3;
   --more-tint: #2c3657;
   --more-ink: #aeb7ce;
-  --link: #8fb6ff;
+  --inverse: #2c3657;
+  --on-inverse: #e8ecf6;
+  --inverse-line: #65709a;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.3), 0 14px 36px rgba(0, 0, 0, 0.5);
   --scrim: rgba(5, 8, 18, 0.62);
@@ -121,6 +127,9 @@ html {
   font-size: var(--fs-m);
   line-height: 1.7;
   -webkit-text-size-adjust: 100%;
+  /* 和文と数字・欧文のあいだは、空白を打たずにブラウザに空けさせる */
+  text-autospace: normal;
+  line-break: strict;
 }
 
 body {
@@ -142,9 +151,16 @@ button {
   cursor: pointer;
 }
 
+/* リンクは色を増やさず、墨色に下線で示す（キャラの青と紛れないように）。指すと強調色になる */
 a {
-  color: var(--link);
+  color: var(--ink);
+  text-decoration-color: var(--line-strong);
   text-underline-offset: 0.2em;
+}
+
+a:hover {
+  color: var(--accent-ink);
+  text-decoration-color: currentColor;
 }
 
 h1,
@@ -203,9 +219,14 @@ kbd {
   top: -60px;
   z-index: 100;
   padding: 8px 14px;
+  border: 1px solid var(--inverse-line);
   border-radius: var(--r-control);
-  background: var(--ink);
-  color: var(--ground);
+  background: var(--inverse);
+  color: var(--on-inverse);
+}
+
+.skip-link:hover {
+  color: var(--on-inverse);
 }
 
 .skip-link:focus {
@@ -263,6 +284,19 @@ kbd {
   filter: brightness(1.08);
 }
 
+/* その画面でいちばん勧めたい操作。強調色を淡く敷く（塗りつぶしは、ここぞという 1 か所だけにする） */
+.button--tinted {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.button--tinted:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  filter: brightness(0.97) saturate(1.2);
+}
+
 .button--quiet {
   border-color: transparent;
   background: none;
@@ -316,9 +350,15 @@ kbd {
   border: 0;
   background: none;
   padding: 0;
-  color: var(--link);
+  color: var(--ink);
   text-decoration: underline;
+  text-decoration-color: var(--line-strong);
   text-underline-offset: 0.2em;
+}
+
+.link:hover {
+  color: var(--accent-ink);
+  text-decoration-color: currentColor;
 }
 
 .link:disabled {
@@ -336,7 +376,7 @@ kbd {
   border-radius: 9px;
   background: var(--accent);
   color: var(--on-accent);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 .count {
@@ -353,8 +393,8 @@ kbd {
 .seg {
   display: inline-grid;
   place-items: center;
-  min-width: 34px;
-  min-height: calc(var(--hit) - 6px);
+  min-width: calc(var(--hit) - 4px);
+  min-height: calc(var(--hit) - 4px);
   padding: 0 10px;
   border: 0;
   border-radius: 6px;
@@ -370,9 +410,11 @@ kbd {
   color: var(--ink);
 }
 
+/* 選択中は、どこでも「強調色を淡く敷いて、強調色の文字」で示す */
 .seg.is-on {
-  background: var(--ink);
-  color: var(--ground);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .seg:has(:focus-visible) {
@@ -392,20 +434,59 @@ kbd {
   background: var(--surface);
 }
 
+/* 絞り込みの選択肢。チェックボックス／ラジオボタンを、押して切り替える札として見せる */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
 .check {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: var(--hit);
-  margin-right: 14px;
+  gap: 4px;
+  min-height: calc(var(--hit) - 4px);
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: var(--fs-s);
+  line-height: 1.2;
   cursor: pointer;
 }
 
 .check input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  accent-color: var(--accent);
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.check:hover {
+  background: var(--surface-2);
+}
+
+.check:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.check:has(input:checked)::before {
+  content: "";
+  width: 9px;
+  height: 5px;
+  margin: -3px 2px 0 0;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.check:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .hint,
@@ -432,7 +513,9 @@ kbd {
 
 .kind-icon--wk {
   background: var(--wk);
-  border-radius: 8%;
+  border-radius: 12%;
+  /* 作品は縦長の四角（ポスターの比率） */
+  transform: scaleX(0.76);
 }
 
 .kind-icon--more {
@@ -483,15 +566,20 @@ kbd {
   --k: var(--wk);
   --k-tint: var(--wk-tint);
   --k-ink: var(--wk-ink);
-  border-radius: 5%;
+  border-radius: 3px;
 }
 
 .thumb--wk img {
   object-position: 50% 30%;
 }
 
-.thumb--poster img {
-  object-position: center;
+/* 詳細の見出し: 名鑑の写真のように縦長の枠で見せる */
+.thumb--portrait {
+  border-radius: 8px;
+}
+
+.thumb--portrait img {
+  object-position: 50% 15%;
 }
 
 /* ---- 全体の枠 ---- */
@@ -523,6 +611,7 @@ kbd {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-height: var(--hit);
   padding: 4px 6px 4px 2px;
   border-radius: var(--r-control);
   color: var(--ink);
@@ -581,7 +670,7 @@ kbd {
 
 .search__input {
   width: 100%;
-  height: 38px;
+  height: max(38px, var(--hit));
   padding: 0 36px 0 36px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-control);
@@ -737,18 +826,15 @@ kbd {
   display: flex;
   flex-direction: column;
   max-width: 240px;
-  padding: 6px 10px;
+  padding: 5px 10px;
+  border: 1px solid var(--inverse-line);
   border-radius: var(--r-control);
-  background: var(--ink);
-  color: var(--ground);
+  background: var(--inverse);
+  color: var(--on-inverse);
   font-size: var(--fs-xs);
   line-height: 1.45;
   pointer-events: none;
   box-shadow: var(--shadow-2);
-}
-
-.graph__tip strong {
-  font-size: var(--fs-s);
 }
 
 .zoom {
@@ -768,8 +854,8 @@ kbd {
 .zoom button {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: var(--hit);
+  height: var(--hit);
   border: 0;
   background: none;
   color: var(--ink);
@@ -804,8 +890,8 @@ kbd {
   top: 12px;
   z-index: 10;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   pointer-events: none;
 }
@@ -814,11 +900,12 @@ kbd {
   pointer-events: auto;
 }
 
+/* 図の上に浮かぶ操作（足跡・段数・絞り込み・凡例・拡大）は、どれも同じ枠線と影にそろえる */
 .crumbs {
   max-width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--r-control);
   background: var(--surface);
   box-shadow: var(--shadow-1);
@@ -847,13 +934,56 @@ kbd {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 30px;
+  min-height: calc(var(--hit) - 6px);
   padding: 0 8px;
   border: 0;
   border-radius: 6px;
   background: none;
   color: var(--ink-2);
   font-size: var(--fs-s);
+}
+
+.crumbs__more {
+  min-width: calc(var(--hit) - 6px);
+  justify-content: center;
+}
+
+.stage__caption {
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-control);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: var(--fs-s);
+  box-shadow: var(--shadow-1);
+}
+
+.stage__caption strong {
+  color: var(--ink);
+}
+
+/* 開いた URL のノードが無いとき */
+.stage__empty {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.stage__empty h1 {
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  line-height: 1.4;
+}
+
+.stage__empty p {
+  max-width: 30em;
+  color: var(--ink-2);
 }
 
 button.crumbs__item:hover {
@@ -913,14 +1043,6 @@ button.crumbs__item:hover {
   font-weight: 400;
 }
 
-.filters select {
-  height: var(--hit);
-  padding: 0 10px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-control);
-  background: var(--surface);
-}
-
 .filters__foot {
   display: flex;
   align-items: center;
@@ -937,7 +1059,7 @@ button.crumbs__item:hover {
   display: flex;
   gap: 14px;
   padding: 6px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--r-control);
   background: var(--surface);
   color: var(--ink-2);
@@ -949,6 +1071,22 @@ button.crumbs__item:hover {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* 線の意味: 声優の色の線は「演じる」、墨色の線は「登場する」 */
+.legend__line::before {
+  content: "";
+  width: 18px;
+  border-top: 2px solid var(--ink-2);
+}
+
+.legend__line--voices::before {
+  border-top-color: var(--va);
+}
+
+.legend__sep {
+  width: 1px;
+  background: var(--line);
 }
 
 .stage__notes {
@@ -971,9 +1109,10 @@ button.crumbs__item:hover {
   align-items: center;
   gap: 12px;
   padding: 8px 14px;
+  border: 1px solid var(--inverse-line);
   border-radius: var(--r-control);
-  background: var(--ink);
-  color: var(--ground);
+  background: var(--inverse);
+  color: var(--on-inverse);
   font-size: var(--fs-s);
   box-shadow: var(--shadow-2);
   pointer-events: auto;
@@ -985,7 +1124,12 @@ button.crumbs__item:hover {
   white-space: nowrap;
 }
 
+.note .link:hover {
+  color: inherit;
+}
+
 .note--accent {
+  border-color: var(--accent);
   background: var(--accent);
   color: var(--on-accent);
 }
@@ -1041,7 +1185,7 @@ button.crumbs__item:hover {
   font-weight: 700;
 }
 
-.tabs button[aria-selected="true"] {
+.tabs button[aria-pressed="true"] {
   color: var(--ink);
   border-bottom-color: var(--accent);
 }
@@ -1069,14 +1213,15 @@ button.crumbs__item:hover {
   width: 60%;
 }
 
-/* 詳細: 名鑑の 1 項目のように、顔と名前を先頭に置く */
+/* 詳細: 声優名鑑の 1 項目のように、縦長の写真・名前・読み・項目を先頭に置く */
 .detail__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
 }
 
 .detail__title {
+  flex: 1;
   min-width: 0;
 }
 
@@ -1089,39 +1234,67 @@ button.crumbs__item:hover {
   font-weight: 700;
 }
 
-.detail h2 {
+.detail h1 {
   margin-top: 2px;
   font-family: var(--font-display);
-  font-size: var(--fs-2xl);
+  font-size: 26px;
   font-weight: 700;
   line-height: 1.3;
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
-.detail h2 rt {
-  font-family: var(--font-ui);
-  font-size: 11px;
-  font-weight: 400;
+.detail__reading,
+.detail__en {
   color: var(--ink-2);
-  letter-spacing: 0.08em;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
 }
 
-.detail__en,
+.detail__reading {
+  letter-spacing: 0.04em;
+}
+
 .detail__facts {
+  display: grid;
+  gap: 2px;
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-s);
+  line-height: 1.5;
+}
+
+.detail__facts > div {
+  display: flex;
+  gap: 10px;
+}
+
+.detail__facts dt {
+  flex: none;
+  min-width: 4.6em;
+  color: var(--ink-2);
+}
+
+.detail__facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 絞り込みが効いていることの知らせ（詳細・つながりの両方で使う） */
+.filter-note {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: var(--r-control);
+  background: var(--surface-2);
   color: var(--ink-2);
   font-size: var(--fs-s);
   line-height: 1.5;
 }
 
-.detail__credit {
-  margin-top: 8px;
-  color: var(--ink-2);
-  font-size: var(--fs-xs);
-  overflow-wrap: anywhere;
-}
-
-.detail__credit a {
-  color: inherit;
+.filter-note .link {
+  margin-left: 8px;
+  font-weight: 700;
 }
 
 .detail__actions {
@@ -1131,14 +1304,6 @@ button.crumbs__item:hover {
   margin-top: 16px;
 }
 
-.detail__links {
-  display: flex;
-  gap: 16px;
-  margin-top: 12px;
-  font-size: var(--fs-s);
-}
-
-.detail__links a,
 .detail__sources a {
   display: inline-flex;
   align-items: center;
@@ -1160,16 +1325,23 @@ button.crumbs__item:hover {
   border-bottom: 1px solid var(--line);
 }
 
-.detail h3 {
+/* 欄の見出しは、中身（15px の名前）より小さく静かにして、線と字間で区切りを示す */
+.detail h2 {
   display: flex;
   align-items: center;
-  font-size: var(--fs-s);
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
   font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.detail h2 .count {
+  letter-spacing: 0;
 }
 
 .mini-filter {
   width: 128px;
-  height: 28px;
+  height: calc(var(--hit) - 6px);
   margin-bottom: 4px;
   padding: 0 8px;
   border: 1px solid var(--line-strong);
@@ -1236,12 +1408,14 @@ button.crumbs__item:hover {
 .node-row__name {
   font-weight: 700;
   overflow-wrap: anywhere;
+  word-break: auto-phrase;
 }
 
 .go small,
 .node-row__sub {
   color: var(--ink-2);
   font-size: var(--fs-xs);
+  white-space: nowrap;
 }
 
 .node-row__name,
@@ -1257,18 +1431,31 @@ button.crumbs__item:hover {
   text-align: right;
 }
 
-/* キャスト表: エンドロールのように「役 …… 声優」を点線でつなぐ */
+/* キャスト表: エンドロールのように「役 …… 声優」を点線でつなぐ。左右の名前と点線を、1 行目の高さでそろえる */
 .cast > li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   padding: 2px 0;
+}
+
+.cast .go {
+  align-items: flex-start;
+}
+
+.cast .go__text {
+  padding-top: 3px;
 }
 
 .cast > li > .go,
 .cast__side {
   flex: 0 1 auto;
-  max-width: 48%;
+  min-width: 0;
+  max-width: 72%;
+}
+
+.cast > li > .go:first-child {
+  max-width: 56%;
 }
 
 .cast__side {
@@ -1281,18 +1468,24 @@ button.crumbs__item:hover {
   max-width: 100%;
 }
 
+/* 右側（相手）は、左の名前より一段静かにする */
+.go--right .go__name {
+  font-weight: 400;
+}
+
 .cast__dots {
   flex: 1;
-  min-width: 12px;
-  height: 0;
-  border-bottom: 2px dotted var(--line-strong);
+  min-width: 16px;
+  height: 2px;
+  margin-top: 19px;
+  background: radial-gradient(circle, var(--ink-3) 0.85px, transparent 1.1px) 0 50% / 6px 2px repeat-x;
 }
 
 .detail__sources ul {
   margin-bottom: 8px;
 }
 
-.detail__sources h3 {
+.detail__sources h2 {
   min-height: 32px;
   margin-bottom: 6px;
   border-bottom: 1px solid var(--line);
@@ -1300,9 +1493,11 @@ button.crumbs__item:hover {
 
 .detail__sources li {
   display: flex;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 0 10px;
   align-items: baseline;
   font-size: var(--fs-s);
+  overflow-wrap: anywhere;
 }
 
 .detail__sources p {
@@ -1320,6 +1515,13 @@ button.crumbs__item:hover {
   font-family: var(--font-display);
   font-size: var(--fs-xl);
   line-height: 1.3;
+}
+
+.path__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .path > .muted {
@@ -1401,25 +1603,26 @@ button.crumbs__item:hover {
   margin-top: 16px;
 }
 
+/* 結果の見出し。囲みにせず、上下の細い線のあいだに明朝の大きな数字を置く */
 .path__summary {
   display: flex;
   flex-direction: column;
   gap: 2px;
   margin-bottom: 12px;
-  padding: 12px 14px;
-  border-left: 4px solid var(--accent);
-  border-radius: 0 var(--r-control) var(--r-control) 0;
-  background: var(--accent-soft);
+  padding: 12px 0;
+  border-block: 1px solid var(--line);
 }
 
 .path__summary strong {
-  font-size: var(--fs-l);
-  line-height: 1.4;
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  line-height: 1.3;
 }
 
 .path__steps {
-  font-family: var(--font-display);
-  font-size: var(--fs-2xl);
+  margin: 0 4px;
+  font-size: 40px;
+  line-height: 1;
   color: var(--accent-ink);
 }
 
@@ -1471,6 +1674,23 @@ button.crumbs__item:hover {
 
 .mylist__body .link {
   margin: 8px;
+  font-size: var(--fs-s);
+}
+
+.mylist__row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.mylist__row .node-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.mylist__undo {
+  padding: 4px 8px;
+  color: var(--ink-2);
   font-size: var(--fs-s);
 }
 
@@ -1554,8 +1774,10 @@ button.crumbs__item:hover {
 
 .home h2 {
   margin-bottom: 12px;
-  font-size: var(--fs-m);
+  font-family: var(--font-display);
+  font-size: var(--fs-l);
   font-weight: 700;
+  line-height: 1.4;
 }
 
 .home__note {
@@ -1564,9 +1786,14 @@ button.crumbs__item:hover {
   font-size: var(--fs-s);
 }
 
+.home__note--search {
+  margin: 8px 0 0;
+}
+
+/* 4 列に決めて、最後の行に 1〜2 枚だけ残らないようにする（声優 12 人 = 3 行、作品 8 本 = 2 行） */
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px 4px;
 }
 
@@ -1608,6 +1835,7 @@ button.crumbs__item:hover {
   font-size: var(--fs-s);
   font-weight: 700;
   overflow-wrap: anywhere;
+  word-break: auto-phrase;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1617,8 +1845,9 @@ button.crumbs__item:hover {
 .node-card__sub {
   color: var(--ink-2);
   font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
   display: -webkit-box;
-  -webkit-line-clamp: 1;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -1664,15 +1893,19 @@ button.crumbs__item:hover {
   font-size: inherit;
 }
 
+/* 右の相関図の説明は、図の真下に添える */
 .home__caption {
   position: absolute;
-  left: calc(min(600px, 50%) + 16px);
-  top: 14px;
+  left: calc(min(600px, 50%) + (100% - min(600px, 50%)) / 2);
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 44%;
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 6px 6px 6px 14px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: var(--r-control);
   background: var(--surface);
   font-size: var(--fs-s);
@@ -1722,7 +1955,8 @@ button.crumbs__item:hover {
 
 .about h3 {
   margin-bottom: 6px;
-  font-size: var(--fs-m);
+  font-family: var(--font-display);
+  font-size: var(--fs-l);
 }
 
 .about p + p {
@@ -1777,10 +2011,35 @@ button.crumbs__item:hover {
   font-size: var(--fs-xl);
 }
 
-/* ---- スマホ: 図は全画面、詳細は下から引き出すシート ---- */
-@media (max-width: 860px) {
+/* ---- タッチ端末: 押せるものは 44px 以上にする ---- */
+@media (pointer: coarse) {
+  .note .link,
+  .filter-note .link,
+  .filters__foot .link,
+  .mylist__body .link,
+  .path > .link,
+  .detail__sources a,
+  .detail__report,
+  .home__foot a,
+  .home__foot .link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+
+/* ---- スマホ（縦長の狭い画面）: 図は全画面、詳細は下から引き出すシート ----
+   横向きのスマホは高さが足りないので、パソコンと同じ左右の配置のままにする。
+   この条件は lib/hooks.ts の useNarrow と同じにしてある。 */
+@media (max-width: 860px) and (orientation: portrait), (max-width: 560px) {
   :root {
     --topbar: 52px;
+    /* 下のシートが図を覆っている高さ */
+    --sheet: calc(64px + env(safe-area-inset-bottom));
+  }
+
+  .app--sheet-half {
+    --sheet: 46dvh;
   }
 
   .app,
@@ -1799,6 +2058,11 @@ button.crumbs__item:hover {
   .nav-button--wide-only,
   .search__kbd {
     display: none;
+  }
+
+  /* トップ画面は検索欄が本文にあるので、上の帯にはサイト名を出す */
+  .app--home .brand__name {
+    display: inline;
   }
 
   .topbar .search {
@@ -1835,39 +2099,62 @@ button.crumbs__item:hover {
     top: calc(100% + 6px);
   }
 
+  /* 絞り込みは画面の幅いっぱいに出す（ボタンの位置から出すと右にはみ出す） */
+  .popover.filters {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    top: calc(var(--topbar) + 60px);
+    width: auto;
+    max-height: calc(100dvh - var(--topbar) - 76px);
+    overflow-y: auto;
+  }
+
+  /* 図は、シートに覆われていない範囲に収める */
+  .app:not(.app--home) .graph {
+    bottom: var(--sheet);
+  }
+
+  /* 詳細のシート: 畳む（名前だけ）・半分（図と要約の両方）・いっぱい、の 3 段 */
   .panel {
     position: fixed;
     left: 0;
     right: 0;
     bottom: 0;
-    height: min(78dvh, 680px);
+    height: calc(64px + env(safe-area-inset-bottom));
     border-left: 0;
     border-top: 1px solid var(--line);
     border-radius: var(--r-sheet) var(--r-sheet) 0 0;
-    transform: translateY(calc(100% - 60px - env(safe-area-inset-bottom)));
-    transition: transform 0.24s ease;
+    transition: height 0.24s ease;
     box-shadow: var(--shadow-2);
+    overflow: hidden;
   }
 
-  .app--sheet-open .panel {
-    transform: none;
+  .app--sheet-half .panel {
+    height: 46dvh;
+  }
+
+  .app--sheet-full .panel {
+    height: min(80dvh, 700px);
   }
 
   .panel__handle {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 6px;
+    align-items: stretch;
+    gap: 4px;
     width: 100%;
-    height: 60px;
+    height: 64px;
     flex: none;
-    padding: 8px 16px 0;
+    padding: 6px 12px 0 16px;
     border: 0;
     border-radius: var(--r-sheet) var(--r-sheet) 0 0;
     background: none;
+    touch-action: none;
   }
 
   .panel__grip {
+    align-self: center;
     width: 40px;
     height: 4px;
     border-radius: 2px;
@@ -1875,28 +2162,77 @@ button.crumbs__item:hover {
   }
 
   .panel__peek {
-    max-width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .panel__peek-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.3;
+  }
+
+  .panel__peek-text strong,
+  .panel__peek-text small {
     overflow: hidden;
-    font-weight: 700;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .panel__peek-text small {
+    color: var(--ink-2);
+    font-size: var(--fs-xs);
+  }
+
+  .panel__peek .icon {
+    color: var(--ink-2);
+    transform: rotate(-90deg);
+  }
+
+  /* 開いているあいだは、すぐ下に同じ名前の見出しがあるので、つまみだけにする */
+  .app--sheet-half .panel__handle,
+  .app--sheet-full .panel__handle {
+    height: 30px;
+    padding-top: 10px;
+  }
+
+  .app--sheet-half .panel__peek,
+  .app--sheet-full .panel__peek {
+    display: none;
   }
 
   .panel__body {
     padding: 4px 16px calc(28px + env(safe-area-inset-bottom));
   }
 
-  .legend,
-  .zoom {
-    bottom: calc(72px + env(safe-area-inset-bottom));
+  /* 図の上の部品は、シートの上端より上に置く。凡例は「使い方」に入れてあるので出さない */
+  .legend {
+    display: none;
   }
 
+  .zoom {
+    bottom: calc(var(--sheet) + 12px);
+  }
+
+  /* 案内は、拡大ボタンと重ならないよう左に寄せる */
   .stage__notes {
-    bottom: calc(118px + env(safe-area-inset-bottom));
+    left: 12px;
+    right: 68px;
+    bottom: calc(var(--sheet) + 12px);
+    width: auto;
+    max-width: none;
+    align-items: flex-start;
+    transform: none;
   }
 
   .note {
     flex-wrap: wrap;
+    gap: 4px 12px;
   }
 
   .home__col {
@@ -1912,12 +2248,24 @@ button.crumbs__item:hover {
     font-size: 34px;
   }
 
+  /* 3 列に決める（声優 12 人 = 4 行、作品は 6 本 = 2 行） */
   .cards {
-    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cards--poster > li:nth-child(n + 7) {
+    display: none;
   }
 
   .about__inner {
     padding: 4px 16px 24px;
+  }
+}
+
+/* 横向きのスマホなど背の低い画面では、凡例が図を隠すので出さない（図の見方は「使い方」にある）。 */
+@media (max-height: 500px) {
+  .legend {
+    display: none;
   }
 }
 

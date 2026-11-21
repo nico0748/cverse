@@ -6,7 +6,7 @@
 //!   graph.bin        CSR バイナリ（経路探索・近傍抽出用）
 //!   index.json       { ids: [...], labels: [...] }（ノード番号 → ID・表示名）
 //!   search.txt       検索キー（1 行 1 ノード、キーはタブ区切り）
-//!   images.json      { bases: [...], refs: [...] }（ノード番号 → 画像 URL。画像が 1 件も無ければ出さない）
+//!   images.json      { bases: [...], refs: [...] }（ノード番号 → 画像 URL。画像が無いノードは空文字列）
 //!   local/…          データに同梱された画像（相対パスで指定されたもの）の写し
 //!   nodes/<k>.json   詳細パネル用。ID のハッシュで分けたシャード
 //! ```
@@ -500,15 +500,11 @@ pub fn write(built: &Built, source: &Path, out: &Path, generated_at: &str) -> Re
 
     // 画像: URL の表と、同梱画像の写し。
     let image_count = built.images.iter().flatten().count();
-    let images_path = out.join("images.json");
-    if image_count > 0 {
-        std::fs::write(
-            &images_path,
-            serde_json::to_vec(&image_table(&built.images))?,
-        )?;
-    } else if images_path.exists() {
-        std::fs::remove_file(&images_path)?;
-    }
+    // 表は画像が 1 件も無くても出す（画面側が、あるかどうかを確かめずに読めるように）。
+    std::fs::write(
+        out.join("images.json"),
+        serde_json::to_vec(&image_table(&built.images))?,
+    )?;
     for rel in &built.local_files {
         let to = local_dir.join(rel);
         if let Some(parent) = to.parent() {

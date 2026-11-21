@@ -51,6 +51,9 @@ interface Props {
   onToggleFavorite: () => void;
   /** このノードを始点にして、つながり（最短経路）を調べる。 */
   onStartPath: () => void;
+  /** 相関図に絞り込みがかかっているか（一覧には効かないので、そのことを伝える）。 */
+  filtered: boolean;
+  onClearFilter: () => void;
 }
 
 const workMeta = (w: WorkRef) => [w.year, w.format && (FORMAT_LABEL[w.format] ?? w.format)].filter(Boolean).join("・");
@@ -112,10 +115,14 @@ function ListSection<T>({
   return (
     <section>
       <div className="section-head">
-        <h3>
+        <h2>
           {title}
-          {items.length > 0 && <span className="count">{items.length}</span>}
-        </h3>
+          {items.length > 0 && (
+            <span className="count" aria-label={`${items.length} 件`}>
+              {items.length}
+            </span>
+          )}
+        </h2>
         {items.length > 12 && (
           <input
             className="mini-filter"
@@ -135,27 +142,37 @@ function ListSection<T>({
       <ul className={className}>{shown.map(children)}</ul>
       {filtered.length > limit && (
         <button type="button" className="more-button" onClick={() => setLimit(limit + PAGE * 2)}>
-          残り {filtered.length - limit} 件を表示
+          残り{filtered.length - limit}件を表示
         </button>
       )}
     </section>
   );
 }
 
+/** 画像の出典とクレジット。出典の欄に、ほかの出典と並べて出す。 */
 function ImageCredit({ image }: { image: ImageInfo }) {
   const source = image.source ? (SOURCE_LABEL[image.source] ?? image.source) : "出典";
   const page = safeHref(image.pageUrl);
   return (
-    <p className="detail__credit">
-      画像: {page ? <a href={page} target="_blank" rel="noreferrer">{source}</a> : source}
-      {image.attribution && `（${image.attribution}）`}
-      {image.license && `・${image.license}`}
-    </p>
+    <li>
+      <span>
+        画像:{" "}
+        {page ? (
+          <a href={page} target="_blank" rel="noreferrer">
+            {source}
+            <Icon name="external" size={12} />
+          </a>
+        ) : (
+          source
+        )}
+      </span>
+      <span className="muted">{[image.attribution, image.license].filter(Boolean).join(" ／ ")}</span>
+    </li>
   );
 }
 
 /** 詳細パネル（F-07）。出演一覧・外部リンク・出典・取得日。一覧から中心を切り替えられる。 */
-export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite, onStartPath }: Props) {
+export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite, onStartPath, filtered, onClearFilter }: Props) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "missing" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
@@ -204,20 +221,28 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
   }
 
   const d = detail;
-  const facts: string[] = [];
+  // 名鑑の項目のように、見出しの下へ「項目名: 値」で並べる。
+  const facts: [string, string][] = [];
   if (d.kind === "va") {
-    if (d.agency) facts.push(d.agency);
-    if (d.debutYear) facts.push(`${d.debutYear} 年〜`);
-  } else if (d.kind === "wk") {
-    if (d.format) facts.push(FORMAT_LABEL[d.format] ?? d.format);
-    if (d.year) facts.push(`${d.year} 年`);
-    if (d.series && d.series !== d.name) facts.push(d.series.endsWith("シリーズ") ? d.series : `${d.series} シリーズ`);
+    if (d.agency) facts.push(["所属", d.agency]);
+    if (d.debutYear) facts.push(["活動開始", `${d.debutYear}年`]);
+    if (d.roles?.length) facts.push(["収録", `${d.roles.length}役`]);
+  } else if (d.kind === "ch") {
+    if (d.voicedBy?.length) facts.push(["声優", d.voicedBy.length === 1 ? d.voicedBy[0].name : `${d.voicedBy.length}人`]);
+    if (d.works?.length) facts.push(["登場", `${d.works.length}作品`]);
+  } else {
+    if (d.format) facts.push(["形態", FORMAT_LABEL[d.format] ?? d.format]);
+    if (d.year) facts.push(["開始", `${d.year}年`]);
+    if (d.series && d.series !== d.name) facts.push(["シリーズ", d.series]);
+    if (d.cast?.length) facts.push(["収録", `キャスト${d.cast.length}人`]);
   }
+  if (d.aliases?.length) facts.push(["別名", d.aliases.join("、")]);
   const hasWikipedia = d.sources?.some((s) => s.source === "wikipedia");
+  const hasAnilist = d.sources?.some((s) => s.source === "anilist");
 
-  const go = (ref: { id: string; name: string }, kind: Kind, note?: string, opts: { poster?: boolean; right?: boolean } = {}) => (
+  const go = (ref: { id: string; name: string }, kind: Kind, note?: string, opts: { right?: boolean } = {}) => (
     <button type="button" className={`go${opts.right ? " go--right" : ""}`} onClick={() => onNavigate(ref.id)}>
-      <Thumb kind={kind} src={image(ref.id)} label={ref.name} size={32} poster={opts.poster} />
+      <Thumb kind={kind} src={image(ref.id)} label={ref.name} size={kind === "wk" ? 30 : 32} />
       <span className="go__text">
         <span className="go__name">{ref.name}</span>
         {note && <small>{note}</small>}
@@ -243,59 +268,48 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
   return (
     <article className="detail">
       <header className={`detail__head detail__head--${d.kind}`}>
-        <Thumb kind={d.kind} src={d.image && imageUrl(d.image.url)} label={d.name} size={d.kind === "wk" ? 84 : 96} poster={d.kind === "wk"} eager />
+        <Thumb kind={d.kind} src={d.image && imageUrl(d.image.url)} label={d.name} size={102} portrait eager />
         <div className="detail__title">
           <p className="detail__kind">
             <KindIcon kind={d.kind} />
             {KIND_LABEL[d.kind]}
           </p>
-          <h2>
-            {d.reading ? (
-              <ruby>
-                {d.name}
-                <rp>（</rp>
-                <rt>{d.reading}</rt>
-                <rp>）</rp>
-              </ruby>
-            ) : (
-              d.name
-            )}
-          </h2>
+          <h1>{d.name}</h1>
+          {d.reading && <p className="detail__reading">{d.reading}</p>}
           {d.nameEn && <p className="detail__en" lang="en">{d.nameEn}</p>}
-          {facts.length > 0 && <p className="detail__facts">{facts.join("・")}</p>}
-          {d.aliases && d.aliases.length > 0 && <p className="detail__facts">別名: {d.aliases.join("、")}</p>}
+          {facts.length > 0 && (
+            <dl className="detail__facts">
+              {facts.map(([term, value]) => (
+                <div key={term}>
+                  <dt>{term}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
         </div>
       </header>
-      {d.image && <ImageCredit image={d.image} />}
 
       <div className="detail__actions">
-        <button type="button" className={`button${isFavorite ? " is-on" : ""}`} aria-pressed={isFavorite} onClick={onToggleFavorite}>
-          <Icon name="star" filled={isFavorite} />
-          {isFavorite ? "お気に入り済み" : "お気に入り"}
-        </button>
-        <button type="button" className="button" onClick={onStartPath}>
+        <button type="button" className="button button--tinted" onClick={onStartPath}>
           <Icon name="route" />
           つながりを調べる
+        </button>
+        <button type="button" className={`button${isFavorite ? " is-on" : ""}`} aria-pressed={isFavorite} onClick={onToggleFavorite}>
+          <Icon name="star" filled={isFavorite} />
+          お気に入り
         </button>
         <button type="button" className="button" onClick={share}>
           <Icon name={shared ? "check" : "share"} />
           <span aria-live="polite">{shared ? "URL をコピーしました" : "共有"}</span>
         </button>
       </div>
-      {(d.wikipediaTitle || d.anilistId != null) && (
-        <p className="detail__links">
-          {d.wikipediaTitle && (
-            <a href={`https://ja.wikipedia.org/wiki/${encodeURIComponent(d.wikipediaTitle)}`} target="_blank" rel="noreferrer">
-              Wikipedia
-              <Icon name="external" size={12} />
-            </a>
-          )}
-          {d.anilistId != null && (
-            <a href={`https://anilist.co/${ANILIST_PATH[d.kind]}/${d.anilistId}`} target="_blank" rel="noreferrer">
-              AniList
-              <Icon name="external" size={12} />
-            </a>
-          )}
+      {filtered && (
+        <p className="filter-note">
+          相関図は絞り込み中です。下の一覧には、すべて載せています。
+          <button type="button" className="link" onClick={onClearFilter}>
+            絞り込みを外す
+          </button>
         </p>
       )}
 
@@ -314,7 +328,7 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
               <li key={r.id}>
                 {go(r, "ch", [r.kind && (KIND_NOTE[r.kind] ?? r.kind), work?.role && ROLE_LABEL[work.role]].filter(Boolean).join("・"))}
                 <span className="cast__dots" aria-hidden="true" />
-                {work && go(work, "wk", [workMeta(work), rest > 0 && `ほか ${rest} 作品`].filter(Boolean).join("・"), { right: true })}
+                {work && go(work, "wk", [workMeta(work), rest > 0 && `ほか${rest}作品`].filter(Boolean).join("・"), { right: true })}
               </li>
             );
           }}
@@ -373,7 +387,7 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
       )}
 
       <section className="detail__sources">
-        <h3>出典</h3>
+        <h2>出典と外部リンク</h2>
         <ul>
           {d.sources?.map((s) => (
             <li key={s.url}>
@@ -389,6 +403,23 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
             </li>
           ))}
           {!d.sources?.length && <li className="muted">出典の記録がありません</li>}
+          {d.image && <ImageCredit image={d.image} />}
+          {d.wikipediaTitle && !hasWikipedia && (
+            <li>
+              <a href={`https://ja.wikipedia.org/wiki/${encodeURIComponent(d.wikipediaTitle)}`} target="_blank" rel="noreferrer">
+                Wikipedia の記事
+                <Icon name="external" size={12} />
+              </a>
+            </li>
+          )}
+          {d.anilistId != null && !hasAnilist && (
+            <li>
+              <a href={`https://anilist.co/${ANILIST_PATH[d.kind]}/${d.anilistId}`} target="_blank" rel="noreferrer">
+                AniList のページ
+                <Icon name="external" size={12} />
+              </a>
+            </li>
+          )}
         </ul>
         {hasWikipedia && (
           <p className="muted">
