@@ -65,12 +65,15 @@ VoiceActor / Character / Work は、画像を 1 枚持てる（Work はキービ
 - 表示できない URL（`http://`、`data:`、実在しない相対パスなど）は検証時に警告して、その画像だけ外す
 - 同梱画像（相対パス）は、データのディレクトリの中にある普通の画像ファイルに限る。拡張子は
   `png` `jpg` `jpeg` `webp` `avif` `gif` `svg` のいずれか。`..` や `.` で始まる名前を含むパス、シンボリックリンク、
-  スクリプトやイベント属性を含む SVG は受け付けない（公開してはいけないファイルを巻き込まないため）
+  絵を描く要素（`svg` `g` `path` `rect` `circle` `text` など）と引用符で囲んだ属性だけでできた SVG 以外は受け付けない
+  （宣言・コメント・文字参照 `&`・`style`・`on…` 属性・文書の外を指す `href` があると外す。公開先でスクリプトが動かないように）
 - 画像が無いノードは、頭文字のアイコンで表示する
 - ビルド時に `--images all|licensed|none` で載せる範囲を選べる。`none` は画像なし。`licensed` は再利用できるものだけを残す
   - `license` がパブリックドメイン（`Public domain` `PD` `PDM`）か `CC0` のもの
-  - `license` が `CC BY` / `CC BY-SA` で、`attribution` か `pageUrl` があるもの（クレジットを出せるもの）
-  - 非営利限定（NC）・改変禁止（ND）と、それ以外の表記（`All rights reserved` など）は外す
+  - `license` が `CC BY` / `CC BY-SA`（版の番号と国・地域の版は可。例: `CC BY-SA 3.0 France`）で、
+    `attribution` か `pageUrl` があるもの（クレジットを出せるもの）
+  - 非営利限定（NC）・改変禁止（ND）と、それ以外の語が混じる表記（`All rights reserved`、`CC0 except …` など）は外す
+- オプションは `--images none` と `--images=none` のどちらでも書ける。知らないオプションや値の無いオプションはエラーにする
 - 配信データの `images.json` は、画像が 1 枚も無くても必ず書き出す（古い画像の表が残らないように）
 
 ## VoiceActor

@@ -157,6 +157,7 @@ export function Legend() {
       <li className="legend__sep" aria-hidden="true" />
       <li className="legend__line legend__line--voices">演じる</li>
       <li className="legend__line">登場する</li>
+      <li className="legend__line legend__line--series">シリーズ</li>
     </ul>
   );
 }

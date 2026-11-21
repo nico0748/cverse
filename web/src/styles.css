@@ -43,6 +43,9 @@
   --inverse: #141b2f;
   --on-inverse: #eef1f6;
   --inverse-line: #141b2f;
+  /* 浮いている面（検索候補・絞り込み・案内の窓）。暗い配色では影が見えないので、面と枠を一段明るくする */
+  --surface-float: #ffffff;
+  --line-float: #d6dbe7;
   --shadow-1: 0 1px 2px rgba(20, 27, 47, 0.1);
   --shadow-2: 0 2px 6px rgba(20, 27, 47, 0.08), 0 12px 32px rgba(20, 27, 47, 0.14);
   --scrim: rgba(20, 27, 47, 0.42);
@@ -97,6 +100,8 @@
   --inverse: #2c3657;
   --on-inverse: #e8ecf6;
   --inverse-line: #65709a;
+  --surface-float: #222b47;
+  --line-float: #65709a;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 2px 6px rgba(0, 0, 0, 0.3), 0 14px 36px rgba(0, 0, 0, 0.5);
   --scrim: rgba(5, 8, 18, 0.62);
@@ -105,6 +110,11 @@
 @media (pointer: coarse) {
   :root {
     --hit: 44px;
+  }
+
+  /* キーボードの操作の説明は、タッチ端末では出さない */
+  .about__keys .keys-only {
+    display: none;
   }
 }
 
@@ -471,17 +481,21 @@ kbd {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent-ink);
-  font-weight: 700;
 }
 
-.check:has(input:checked)::before {
+/* 印の場所は選ぶ前から空けておく（選んだときに幅が変わって隣が動かないように） */
+.check::before {
   content: "";
   width: 9px;
   height: 5px;
   margin: -3px 2px 0 0;
-  border-left: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
+  border-left: 2px solid transparent;
+  border-bottom: 2px solid transparent;
   transform: rotate(-45deg);
+}
+
+.check:has(input:checked)::before {
+  border-color: currentColor;
 }
 
 .check:has(input:focus-visible) {
@@ -647,9 +661,9 @@ kbd {
   position: absolute;
   top: calc(100% + 8px);
   z-index: 40;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-float);
   border-radius: var(--r-pop);
-  background: var(--surface);
+  background: var(--surface-float);
   box-shadow: var(--shadow-2);
 }
 
@@ -670,6 +684,7 @@ kbd {
 
 .search__input {
   width: 100%;
+  scroll-margin-top: calc(var(--topbar) + 12px);
   height: max(38px, var(--hit));
   padding: 0 36px 0 36px;
   border: 1px solid var(--line-strong);
@@ -706,9 +721,9 @@ kbd {
   z-index: 40;
   min-width: 280px;
   padding: 8px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-float);
   border-radius: var(--r-pop);
-  background: var(--surface);
+  background: var(--surface-float);
   box-shadow: var(--shadow-2);
 }
 
@@ -888,7 +903,7 @@ kbd {
   left: 14px;
   right: 14px;
   top: 12px;
-  z-index: 10;
+  z-index: 12;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -979,6 +994,8 @@ kbd {
   font-family: var(--font-display);
   font-size: var(--fs-xl);
   line-height: 1.4;
+  text-wrap: balance;
+  word-break: auto-phrase;
 }
 
 .stage__empty p {
@@ -1020,7 +1037,11 @@ button.crumbs__item:hover {
 .filters {
   left: 0;
   width: min(340px, calc(100vw - 28px));
+  /* 背の低い画面（横向きのスマホ、拡大表示）でも、中をスクロールして全部に届く */
+  max-height: calc(100dvh - var(--topbar) - 76px);
   padding: 14px 16px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .filters fieldset,
@@ -1040,6 +1061,7 @@ button.crumbs__item:hover {
 
 .filters legend small {
   margin-left: 6px;
+  font-size: inherit;
   font-weight: 400;
 }
 
@@ -1084,6 +1106,10 @@ button.crumbs__item:hover {
   border-top-color: var(--va);
 }
 
+.legend__line--series::before {
+  border-top-color: var(--wk);
+}
+
 .legend__sep {
   width: 1px;
   background: var(--line);
@@ -1092,7 +1118,8 @@ button.crumbs__item:hover {
 .stage__notes {
   position: absolute;
   left: 50%;
-  bottom: 14px;
+  /* 凡例（左下）の上に出す */
+  bottom: 58px;
   z-index: 10;
   display: flex;
   flex-direction: column-reverse;
@@ -1186,7 +1213,8 @@ button.crumbs__item:hover {
 }
 
 .tabs button[aria-pressed="true"] {
-  color: var(--ink);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
   border-bottom-color: var(--accent);
 }
 
@@ -1237,10 +1265,13 @@ button.crumbs__item:hover {
 .detail h1 {
   margin-top: 2px;
   font-family: var(--font-display);
-  font-size: 26px;
+  font-size: var(--fs-2xl);
   font-weight: 700;
   line-height: 1.3;
-  overflow-wrap: anywhere;
+  /* 長い名前は「・」や語の切れ目で折る。かなの字間は詰めて組む */
+  font-feature-settings: "palt";
+  overflow-wrap: break-word;
+  word-break: auto-phrase;
   text-wrap: balance;
 }
 
@@ -1300,8 +1331,12 @@ button.crumbs__item:hover {
 .detail__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   margin-top: 16px;
+}
+
+.detail__actions .button {
+  padding-inline: 10px;
 }
 
 .detail__sources a {
@@ -1329,10 +1364,9 @@ button.crumbs__item:hover {
 .detail h2 {
   display: flex;
   align-items: center;
-  color: var(--ink-2);
-  font-size: var(--fs-xs);
+  color: var(--ink);
+  font-size: var(--fs-s);
   font-weight: 700;
-  letter-spacing: 0.08em;
 }
 
 .detail h2 .count {
@@ -1454,8 +1488,14 @@ button.crumbs__item:hover {
   max-width: 72%;
 }
 
+/* 左の名前は縮めない（縮むと 1 文字ずつ折れる）。長ければ語の切れ目で折る */
 .cast > li > .go:first-child {
-  max-width: 56%;
+  flex: 0 0 auto;
+  max-width: 58%;
+}
+
+.cast .go__name {
+  overflow-wrap: break-word;
 }
 
 .cast__side {
@@ -1826,6 +1866,12 @@ button.crumbs__item:hover {
   text-align: center;
 }
 
+/* 絵の高さが種類で違っても、名前の行がそろうようにする */
+.cards--row .node-card--va > .thumb,
+.cards--row .node-card--ch > .thumb {
+  margin-top: 24px;
+}
+
 .node-card:hover {
   background: var(--surface);
   box-shadow: var(--shadow-1);
@@ -1845,7 +1891,9 @@ button.crumbs__item:hover {
 .node-card__sub {
   color: var(--ink-2);
   font-size: var(--fs-xs);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: auto-phrase;
+  text-wrap: balance;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1918,9 +1966,9 @@ button.crumbs__item:hover {
   width: min(600px, calc(100vw - 24px));
   max-height: min(84dvh, 760px);
   padding: 0;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-float);
   border-radius: var(--r-pop);
-  background: var(--surface);
+  background: var(--surface-float);
   color: var(--ink);
   box-shadow: var(--shadow-2);
 }
@@ -2022,9 +2070,22 @@ button.crumbs__item:hover {
   .detail__report,
   .home__foot a,
   .home__foot .link {
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
+    /* 行間を崩さずに、押せる範囲だけ上下に広げる */
+    position: relative;
+  }
+
+  .note .link::after,
+  .filter-note .link::after,
+  .filters__foot .link::after,
+  .mylist__body .link::after,
+  .path > .link::after,
+  .detail__sources a::after,
+  .detail__report::after,
+  .home__foot a::after,
+  .home__foot .link::after {
+    content: "";
+    position: absolute;
+    inset: -13px -4px;
   }
 }
 
@@ -2112,6 +2173,8 @@ button.crumbs__item:hover {
 
   /* 図は、シートに覆われていない範囲に収める */
   .app:not(.app--home) .graph {
+    /* 上は段数・絞り込みの帯のぶんを空ける（名前が帯の下に隠れないように） */
+    top: 52px;
     bottom: var(--sheet);
   }
 
@@ -2216,7 +2279,20 @@ button.crumbs__item:hover {
   }
 
   .zoom {
-    bottom: calc(var(--sheet) + 12px);
+    bottom: 12px;
+  }
+
+  .stage__empty h1 {
+    font-size: var(--fs-l);
+  }
+
+  .about__keys {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .about__keys dt:not(:first-child) {
+    margin-top: 10px;
   }
 
   /* 案内は、拡大ボタンと重ならないよう左に寄せる */
@@ -2266,6 +2342,10 @@ button.crumbs__item:hover {
 @media (max-height: 500px) {
   .legend {
     display: none;
+  }
+
+  .stage__notes {
+    bottom: 14px;
   }
 }
 

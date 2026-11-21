@@ -59,5 +59,8 @@ describe("Rust 側との取り決め", () => {
     expect(
       filterArgs({ anime: true, game: false, formats: ["tv", "game"], yearMin: 2000, yearMax: 2010, mainOnly: true }),
     ).toEqual([1, (1 << 1) | (1 << 2) | (1 << 7), 2000, 2010, true]);
+    // 形態はアニメだけを絞る: ゲームを残していればゲームは落とさない。アニメを外したら形態は無視する。
+    expect(filterArgs({ ...DEFAULT_FILTER, formats: ["tv"] })[1]).toBe((1 << 1) | (1 << 2) | (1 << 7));
+    expect(filterArgs({ ...DEFAULT_FILTER, anime: false, formats: ["tv"] })[1]).toBe(0);
   });
 });

@@ -142,6 +142,9 @@ export function filterArgs(f: Filter): [number, number, number, number, boolean]
   for (const g of FORMAT_GROUPS) {
     if (f.formats.includes(g.key)) for (const c of g.codes) formats |= 1 << c;
   }
+  // 形態はアニメだけを絞る。ゲームを残しているなら形態で落とさず、アニメを外しているなら形態は効かせない。
+  if (!f.anime) formats = 0;
+  else if (formats && f.game) formats |= 1 << 7;
   return [media, formats, f.yearMin ?? 0, f.yearMax ?? 0, f.mainOnly];
 }
 

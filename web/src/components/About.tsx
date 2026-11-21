@@ -58,10 +58,10 @@ export function About({ open, onClose, meta }: { open: boolean; onClose: () => v
             <dd>担当声優などの補足を表示します</dd>
             <dt>ドラッグ・ホイール・ピンチ</dt>
             <dd>図を動かす、拡大・縮小する</dd>
-            <dt>
+            <dt className="keys-only">
               <kbd>/</kbd>
             </dt>
-            <dd>検索欄へ移動します</dd>
+            <dd className="keys-only">検索欄へ移動します</dd>
             <dt>ブラウザの「戻る」</dt>
             <dd>ひとつ前の中心に戻ります</dd>
           </dl>

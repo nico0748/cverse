@@ -118,6 +118,7 @@ export function sceneFromView(view: ViewData, trail: string[], options: LayoutOp
   const { positions, extent } = layoutView({ ...view, nodes }, options);
   const trailSet = new Set(trail);
   const level = new Map(nodes.map((n) => [n.id, n.level]));
+  const quietAside = view.nodes[0]?.kind !== "va";
   const sceneNodes = nodes.map((n) => sceneNode(n, positions.get(n.id)!, trailSet));
 
   const edges: SceneEdge[] = view.edges.map((e) => ({
@@ -125,7 +126,9 @@ export function sceneFromView(view: ViewData, trail: string[], options: LayoutOp
     b: e.b,
     style: e.type,
     role: e.role,
-    dim: Math.max(level.get(e.a) ?? 0, level.get(e.b) ?? 0) >= 2,
+    // 2 段目より先の線は控えめにする。キャラ・作品が中心のときは、中心に触れない線（共演キャラと別の作品を
+    // 結ぶ線など）も控えめにして、中心から出る線が埋もれないようにする。
+    dim: Math.max(level.get(e.a) ?? 0, level.get(e.b) ?? 0) >= 2 || (quietAside && e.a !== view.center && e.b !== view.center),
   }));
   for (const h of view.hidden) {
     edges.push({ a: h.parent, b: `more:${h.parent}`, style: "more", role: 0, dim: false });

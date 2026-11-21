@@ -412,22 +412,75 @@ fn is_freely_licensed(image: &Image) -> bool {
     let Some(license) = image.license.as_deref() else {
         return false;
     };
-    let key: String = license
-        .chars()
-        .filter(|c| c.is_alphanumeric())
-        .flat_map(char::to_lowercase)
+    // 語に分けて、知っている語だけでできた表記に限る。前方一致にすると「CC BY-NoDerivs」や
+    // 「CC0 except …」まで通ってしまう。
+    let lower = license.to_lowercase();
+    let tokens: Vec<&str> = lower
+        .split(|c: char| !(c.is_alphanumeric() || c == '.'))
+        .filter(|t| !t.is_empty())
         .collect();
-    if key.starts_with("cc0") || key.starts_with("publicdomain") || key == "pd" || key == "pdm" {
-        return true;
+    let is_version = |t: &str| t.chars().all(|c| c.is_ascii_digit() || c == '.');
+    match tokens.as_slice() {
+        ["cc0"] | ["cc0", "1.0"] | ["pd"] | ["pdm"] | ["public", "domain"] => return true,
+        ["public", "domain", "mark"] | ["public", "domain", "mark", "1.0"] => return true,
+        _ => {}
     }
-    let attribution_share = key.starts_with("ccby") && !key.contains("nc") && !key.contains("nd");
+    let rest = match tokens.as_slice() {
+        ["cc", "by", "sa", rest @ ..] | ["cc", "by", rest @ ..] => rest,
+        _ => return false,
+    };
+    // 版の番号と、国・地域の版（「3.0 France」など）だけを後ろに許す。
+    let mut rest = rest.iter();
+    let versioned = match rest.next() {
+        None => true,
+        Some(t) => is_version(t),
+    };
+    let ported = rest.all(|t| JURISDICTIONS.contains(t));
     let credited = image
         .attribution
         .as_deref()
         .is_some_and(|a| !a.trim().is_empty())
         || image.page_url.is_some();
-    attribution_share && credited
+    versioned && ported && credited
 }
+
+/// CC ライセンスの国・地域版の名前に出てくる語。
+const JURISDICTIONS: [&str; 34] = [
+    "unported",
+    "international",
+    "generic",
+    "igo",
+    "japan",
+    "jp",
+    "france",
+    "fr",
+    "germany",
+    "de",
+    "netherlands",
+    "nl",
+    "spain",
+    "es",
+    "italy",
+    "it",
+    "us",
+    "usa",
+    "united",
+    "states",
+    "uk",
+    "england",
+    "wales",
+    "scotland",
+    "and",
+    "australia",
+    "au",
+    "austria",
+    "at",
+    "canada",
+    "ca",
+    "korea",
+    "taiwan",
+    "china",
+];
 
 /// 同梱できる画像の拡張子。それ以外のファイル（データの JSON や設定ファイルなど）は公開しない。
 const IMAGE_EXTENSIONS: [&str; 7] = ["png", "jpg", "jpeg", "webp", "avif", "gif", "svg"];
@@ -480,39 +533,127 @@ fn check_image_url(root: &Path, url: &str) -> Result<(), String> {
     if escapes {
         return Err(format!("{url} はデータのディレクトリの外を指しています"));
     }
-    // SVG はサイトと同じ場所から配ると、中のスクリプトがサイトの権限で動く。動く要素を含むものは外す。
+    // SVG はサイトと同じ場所から配ると、中のスクリプトがサイトの権限で動く。禁止語を探すやり方は
+    // 抜け道が多い（名前空間の接頭辞、文字参照、実体宣言）ので、絵を描く要素と属性だけでできたものに限る。
     if extension == "svg" {
-        let text = std::fs::read_to_string(&path)
-            .unwrap_or_default()
-            .to_lowercase();
-        let active = [
-            "<script",
-            "javascript:",
-            "<foreignobject",
-            "<iframe",
-            "<embed",
-            "<object",
-        ]
-        .iter()
-        .any(|needle| text.contains(needle))
-            || has_event_handler(&text);
-        if text.is_empty() || active {
-            return Err(format!("{url} はスクリプトなどを含む SVG です"));
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        if let Err(why) = check_plain_svg(&text) {
+            return Err(format!("{url} は使えない SVG です（{why}）"));
         }
     }
     Ok(())
 }
 
-/// ` onload=` のようなイベント属性があるか。
-fn has_event_handler(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    text.match_indices("on").any(|(i, _)| {
-        let before =
-            i == 0 || bytes[i - 1].is_ascii_whitespace() || matches!(bytes[i - 1], b'"' | b'\'');
-        let rest = &text[i + 2..];
-        let name_len = rest.bytes().take_while(u8::is_ascii_lowercase).count();
-        before && name_len > 0 && rest[name_len..].trim_start().starts_with('=')
-    })
+/// 同梱できる SVG の要素。図形と塗りだけで、スクリプト・外部参照・埋め込みを持てないもの。
+const SVG_ELEMENTS: [&str; 20] = [
+    "svg",
+    "g",
+    "defs",
+    "path",
+    "rect",
+    "circle",
+    "ellipse",
+    "line",
+    "polyline",
+    "polygon",
+    "lineargradient",
+    "radialgradient",
+    "stop",
+    "clippath",
+    "mask",
+    "title",
+    "desc",
+    "text",
+    "tspan",
+    "use",
+];
+
+/// 絵を描くだけの SVG かどうかを確かめる。許した要素以外、宣言（`<!…>`・`<?…?>`）、文字参照（`&`）、
+/// `on…` 属性、文書の外を指す `href` があれば、理由を返す。
+fn check_plain_svg(text: &str) -> Result<(), String> {
+    let body = text.trim_start_matches('\u{feff}').trim();
+    let body = match body.strip_prefix("<?xml") {
+        Some(rest) => rest.split_once("?>").map(|(_, after)| after).unwrap_or(""),
+        None => body,
+    };
+    if body.trim().is_empty() {
+        return Err("中身がありません".into());
+    }
+    if body.contains('&') {
+        return Err("文字参照（&）は使えません".into());
+    }
+    let mut rest = body;
+    let mut first = true;
+    while let Some(start) = rest.find('<') {
+        let Some(len) = rest[start..].find('>') else {
+            return Err("タグが閉じていません".into());
+        };
+        let tag = &rest[start + 1..start + len];
+        rest = &rest[start + len + 1..];
+        if tag.starts_with('!') || tag.starts_with('?') {
+            return Err("宣言やコメントは使えません".into());
+        }
+        let inner = tag.trim_start_matches('/').trim_end_matches('/');
+        let name_len = inner
+            .find(|c: char| c.is_whitespace())
+            .unwrap_or(inner.len());
+        let name = inner[..name_len].to_lowercase();
+        if !SVG_ELEMENTS.contains(&name.as_str()) {
+            return Err(format!("<{name}> は使えません"));
+        }
+        if first && name != "svg" {
+            return Err("<svg> で始まっていません".into());
+        }
+        first = false;
+        check_svg_attributes(&inner[name_len..])?;
+    }
+    if first {
+        return Err("<svg> がありません".into());
+    }
+    Ok(())
+}
+
+/// タグの属性を確かめる。値は引用符で囲まれている前提（そうでなければ断る）。
+fn check_svg_attributes(mut attrs: &str) -> Result<(), String> {
+    loop {
+        attrs = attrs.trim_start();
+        if attrs.is_empty() {
+            return Ok(());
+        }
+        let Some((name, after)) = attrs.split_once('=') else {
+            return Err("値の無い属性があります".into());
+        };
+        let name = name.trim().to_lowercase();
+        let after = after.trim_start();
+        let quote = after.chars().next().filter(|c| matches!(c, '"' | '\''));
+        let Some(quote) = quote else {
+            return Err("属性の値が引用符で囲まれていません".into());
+        };
+        let Some(end) = after[1..].find(quote) else {
+            return Err("属性の値が閉じていません".into());
+        };
+        let value = after[1..1 + end].trim().to_lowercase();
+        attrs = &after[end + 2..];
+        let plain = !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | ':'));
+        if !plain || name.starts_with("on") {
+            return Err(format!("属性 {name} は使えません"));
+        }
+        if name.contains(':') && !matches!(name.as_str(), "xmlns:xlink" | "xlink:href") {
+            return Err(format!("属性 {name} は使えません"));
+        }
+        if name.ends_with("href") && !value.starts_with('#') {
+            return Err("文書の外を指す href は使えません".into());
+        }
+        if name == "style"
+            || value.contains("javascript:")
+            || value.contains("url(") && !value.contains("url(#")
+        {
+            return Err(format!("属性 {name} の値は使えません"));
+        }
+    }
 }
 
 const MAX_LISTED: usize = 200;
@@ -666,6 +807,20 @@ mod tests {
             (r#""fair use""#, credited, false),
             (r#""CC BY-NC 4.0""#, credited, false),
             (r#""CC BY-ND 4.0""#, credited, false),
+            // 前方一致では通ってしまう表記と、国・地域版。
+            (r#""CC BY-NoDerivs 3.0""#, credited, false),
+            (r#""CC BY-NoDerivatives 4.0""#, credited, false),
+            (
+                r#""CC BY 4.0 (editorial use only, no derivatives)""#,
+                credited,
+                false,
+            ),
+            (r#""CC0 except trademark""#, "", false),
+            (r#""Public Domain? unknown""#, "", false),
+            (r#""CC BY-SA 3.0 France""#, credited, true),
+            (r#""CC BY 3.0 Netherlands""#, credited, true),
+            (r#""CC BY-SA 4.0 International""#, credited, true),
+            (r#""CC0 1.0""#, "", true),
             ("null", credited, false),
         ] {
             assert_eq!(
@@ -742,7 +897,43 @@ mod tests {
         ] {
             assert!(!is_web_url(bad), "{bad}");
         }
-        assert!(has_event_handler(r#"<rect onclick="x">"#));
-        assert!(!has_event_handler(r#"<path d="M0 0" font-family="one">"#));
+    }
+
+    #[test]
+    fn bundled_svg_may_only_draw() {
+        let wrap =
+            |inner: &str| format!(r#"<svg xmlns="http://www.w3.org/2000/svg">{inner}</svg>"#);
+        for ok in [
+            wrap(r#"<path d="M0 0" font-family="one"/>"#),
+            wrap(
+                r##"<defs><linearGradient id="g"><stop offset="0" stop-color="#fff"/></linearGradient></defs><rect fill="url(#g)" width="2" height="3"/>"##,
+            ),
+            format!("<?xml version=\"1.0\"?>\n{}", wrap("<text x='1'>化</text>")),
+        ] {
+            assert_eq!(check_plain_svg(&ok), Ok(()), "{ok}");
+        }
+        for bad in [
+            String::new(),
+            "<html></html>".into(),
+            wrap("<script>1</script>"),
+            // 名前空間の接頭辞・文字参照・実体宣言で禁止語を隠したもの。
+            r#"<svg xmlns:s="http://www.w3.org/2000/svg"><s:script>alert(1)</s:script></svg>"#
+                .into(),
+            wrap(r#"<a href="&#106;avascript:alert(1)"><rect width="1" height="1"/></a>"#),
+            format!(r#"<!DOCTYPE svg [<!ENTITY x "y">]>{}"#, wrap("")),
+            wrap(r#"<rect onclick="x" width="1" height="1"/>"#),
+            wrap(r#"<rect ONLOAD='x'/>"#),
+            wrap(r#"<use href="https://evil.example/a.svg#x"/>"#),
+            wrap(r#"<use xlink:href="data:image/svg+xml,x"/>"#),
+            wrap(r#"<rect fill="url(https://evil.example/a)"/>"#),
+            wrap(r#"<rect style="background:url(x)"/>"#),
+            wrap("<foreignObject><p>x</p></foreignObject>"),
+            wrap("<image href='#a'/>"),
+            wrap("<style>*{}</style>"),
+            wrap("<!-- c -->"),
+            wrap("<rect width=1/>"),
+        ] {
+            assert!(check_plain_svg(&bad).is_err(), "{bad} を受け付けてしまった");
+        }
     }
 }

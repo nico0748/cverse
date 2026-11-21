@@ -75,7 +75,10 @@ function createSigma(graph: Graph, container: HTMLElement) {
       zoomToSizeRatioFunction: (ratio) => ratio,
       autoRescale: true,
       stagePadding: 16,
-      enableNodeDrag: true,
+      // 配置は計算で決まるので、ノードは動かせないようにする（指でなぞったら図が動く）。
+      enableNodeDrag: false,
+      // 枠の高さが 0 のとき（極端に低い窓など）も、例外にせず待つ。
+      allowInvalidContainer: true,
       enableCameraRotation: false,
       minCameraRatio: 0.12,
       maxCameraRatio: 3,
@@ -244,7 +247,7 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
     };
 
     // 名札と注記。重なるものは優先度の低いほうを省く（中心・アンカー・ホバー中は必ず出す）。
-    const drawLabels = (items: Item[], p: Palette, hovered: string | null) => {
+    const drawLabels = (items: Item[], p: Palette, hovered: string | null, viewWidth: number) => {
       // 名札は、ほかの名札にも、ほかのノードの絵にも重ねない。
       const placed: Rect[] = items.filter((it) => it.r >= 5).map((it) => [it.x - it.w, it.y - it.h, it.x + it.w, it.y + it.h]);
       const hits = (r: Rect) => placed.some(([a, b, c, d]) => r[0] < c && r[2] > a && r[1] < d && r[3] > b);
@@ -262,21 +265,25 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
         const size = center ? 17 : outer ? 12 : 13;
         const font = center ? `700 ${size}px ${FONT_DISPLAY}` : `400 ${size}px ${FONT_UI}`;
         const full = center || isHovered || node.emphasis === "path" || node.emphasis === "end";
-        const max = full ? 260 : outer ? 96 : node.forceLabel ? 148 : 122;
+        const max = Math.min(viewWidth - 24, full ? 260 : outer ? 96 : node.forceLabel ? 176 : 140);
         const { text, width } = measured(`${node.id}|${size}|${max}`, font, node.label, max);
         const padX = outer ? 3 : center ? 9 : 6;
         const height = size + (outer ? 4 : center ? 10 : 7);
         const gap = node.emphasis || isHovered ? 9 : 4;
         const half = width / 2 + padX;
-        const below: Rect = [x - half, y + h + gap, x + half, y + h + gap + height];
-        const above: Rect = [x - half, y - h - gap - height, x + half, y - h - gap];
+        // 上下の札は、画面の端からはみ出すぶんだけ内側へ寄せる。
+        const shift = Math.max(4 - (x - half), 0) + Math.min(viewWidth - 4 - (x + half), 0);
+        const below: Rect = [x - half + shift, y + h + gap, x + half + shift, y + h + gap + height];
+        const above: Rect = [x - half + shift, y - h - gap - height, x + half + shift, y - h - gap];
         const side = it.w + gap + 2;
         const right: Rect = [x + side, y - height / 2, x + side + half * 2, y + height / 2];
         const left: Rect = [x - side - half * 2, y - height / 2, x - side, y + height / 2];
-        // 下が空いていなければ、ほかの置き場所を試す。必ず出す名札は横も試し、どこも空いていなければ下に出す。
+        // 下が空いていなければ、ほかの置き場所を試す。必ず出す名札は横も試す。どこも空いていないときに
+        // 重ねてでも出すのは、中心・指しているノード・経路だけ（ほかは詳細の一覧で読める）。
+        const inside = (c: Rect) => c[0] >= 4 && c[2] <= viewWidth - 4;
         const candidates = outer ? [below] : forced ? (node.note ? [below, right, left] : [below, right, left, above]) : [below, above];
-        const free = candidates.find((c) => !hits(c));
-        if (!free && !forced) continue;
+        const free = candidates.find((c) => inside(c) && !hits(c));
+        if (!free && !full) continue;
         const rect = free ?? below;
         const cx = (rect[0] + rect[2]) / 2;
         placed.push(rect);
@@ -321,6 +328,7 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
       const p = paletteRef.current;
       if (!p) return;
       const { width, height } = sigma.getDimensions();
+      if (width <= 1 || height <= 1) return;
       const ratio = window.devicePixelRatio || 1;
       if (overlay.width !== Math.round(width * ratio) || overlay.height !== Math.round(height * ratio)) {
         overlay.width = Math.round(width * ratio);
@@ -355,10 +363,16 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
       const order = (it: Item) => (it.node.id === hovered ? 9 : it.node.emphasis === "center" ? 8 : 4 - Math.min(it.node.level, 3));
       items.sort((a, b) => order(a) - order(b));
       for (const it of items) drawTile(it, p, it.node.id === hovered);
-      drawLabels(items, p, hovered);
+      drawLabels(items, p, hovered, width);
       ctx.globalAlpha = 1;
     };
     sigma.on("afterRender", drawOverlay);
+    // 描画の土台（WebGL）が失われたら、古い絵を残さない。戻ったら描き直す。
+    sigma.on("webglContextLost", () => {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+    });
+    sigma.on("webglContextRestored", () => sigma.scheduleRender());
     const redraw = () => sigma.scheduleRender();
     const offSprite = onSpriteReady(redraw);
     // Web フォントは使う文字の分だけ後から届くので、届いたら幅を測り直して描き直す。
@@ -402,7 +416,15 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
     // スマホではホバーが無いので、長押しで補足を出す。
     let pressTimer = 0;
     let suppressClick = false;
+    let pressStart = { x: 0, y: 0 };
+    // タッチでは「指す」が無い。触れただけで補足が出たり、動いてきたノードに補足が移ったりしないようにする。
+    let touching = false;
+    const onPointerDown = (e: PointerEvent) => {
+      touching = e.pointerType === "touch";
+    };
+    container.addEventListener("pointerdown", onPointerDown, true);
     sigma.on("enterNode", ({ node }) => {
+      if (touching) return;
       setHovered(node);
       showTip(node);
     });
@@ -414,16 +436,28 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
       suppressClick = false;
       if (!("touches" in event.original)) return;
       window.clearTimeout(pressTimer);
+      pressStart = { x: event.x, y: event.y };
       pressTimer = window.setTimeout(() => {
         suppressClick = true;
         setHovered(node);
         showTip(node);
       }, LONG_PRESS);
     });
-    sigma.on("nodeDragStart", () => {
-      window.clearTimeout(pressTimer);
-      hideTip();
-    });
+    // 指が動いたら（図を動かす操作なので）長押しにしない。離したときも同じ。
+    const cancelPress = () => window.clearTimeout(pressTimer);
+    const onTouchMove = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t || e.touches.length > 1) return cancelPress();
+      const box = container.getBoundingClientRect();
+      if (Math.hypot(t.clientX - box.left - pressStart.x, t.clientY - box.top - pressStart.y) > 8) {
+        cancelPress();
+        hideTip();
+        setHovered(null);
+      }
+    };
+    container.addEventListener("touchmove", onTouchMove, { passive: true });
+    container.addEventListener("touchend", cancelPress, { passive: true });
+    container.addEventListener("touchcancel", cancelPress, { passive: true });
     sigma.on("clickNode", ({ node }) => {
       window.clearTimeout(pressTimer);
       if (suppressClick) return;
@@ -437,10 +471,31 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
       setHovered(null);
     });
 
-    const resize = new ResizeObserver(() => sigma.resize());
+    // 枠の大きさが変わったら（スマホのシートの開閉など）描き直す。Sigma の resize() は消すだけで描かない。
+    const resize = new ResizeObserver(() => {
+      if (!container.offsetWidth || !container.offsetHeight) return;
+      sigma.resize();
+      sigma.scheduleRender();
+    });
     resize.observe(container);
+    // 画面の密度が変わったら（別のモニターへ移したときなど）、WebGL 側も作り直す。
+    let dpr: MediaQueryList | null = null;
+    const onDpr = () => {
+      dpr?.removeEventListener("change", onDpr);
+      dpr = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      dpr.addEventListener("change", onDpr);
+      sigma.resize(true);
+      sigma.scheduleRender();
+    };
+    dpr = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    dpr.addEventListener("change", onDpr);
     return () => {
       window.clearTimeout(pressTimer);
+      container.removeEventListener("pointerdown", onPointerDown, true);
+      dpr?.removeEventListener("change", onDpr);
+      container.removeEventListener("touchmove", onTouchMove);
+      container.removeEventListener("touchend", cancelPress);
+      container.removeEventListener("touchcancel", cancelPress);
       resize.disconnect();
       offSprite();
       document.fonts?.removeEventListener?.("loadingdone", onFonts);

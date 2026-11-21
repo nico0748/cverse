@@ -17,14 +17,56 @@ export function usePopover<T extends HTMLElement>(): [boolean, (open: boolean) =
       // 閉じたら、開いたボタンにフォーカスを戻す。
       ref.current?.querySelector<HTMLElement>("[aria-expanded]")?.focus();
     };
+    // Tab で外へ出たら閉じる（開いたままページの裏へフォーカスが行かないように）。
+    const onFocusOut = (e: FocusEvent) => {
+      const to = e.relatedTarget as Node | null;
+      if (to && ref.current && !ref.current.contains(to)) setOpen(false);
+    };
+    const el = ref.current;
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
+    el?.addEventListener("focusout", onFocusOut);
     return () => {
       document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("keydown", onKey);
+      el?.removeEventListener("focusout", onFocusOut);
     };
   }, [open]);
   return [open, setOpen, ref];
+}
+
+const SCOPES = ".endpoint, .mylist, .filters, .path, .panel";
+const FOCUSABLE = "button:not(:disabled), input:not(:disabled), a[href], [tabindex]";
+
+/**
+ * 押したボタンが消えたり無効になったりして、フォーカスの行き場が無くなったときの受け皿。
+ * 押した場所を含むまとまり（端点の欄、マイリスト、絞り込み、パネル）の先頭へ移して、キーボードで続けられるようにする。
+ */
+export function useFocusRescue() {
+  useEffect(() => {
+    const rescue = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Enter") return;
+      const from = e.target as Element | null;
+      const scopes: Element[] = [];
+      for (let el = from?.closest?.(SCOPES) ?? null; el; el = el.parentElement?.closest(SCOPES) ?? null) scopes.push(el);
+      if (!scopes.length) return;
+      // 画面の更新が済んでから確かめる。
+      setTimeout(() => {
+        if (document.activeElement && document.activeElement !== document.body) return;
+        for (const scope of scopes) {
+          if (!scope.isConnected) continue;
+          const target = scope.matches("[tabindex]") ? (scope as HTMLElement) : scope.querySelector<HTMLElement>(FOCUSABLE);
+          if (target) return target.focus({ preventScroll: true });
+        }
+      }, 60);
+    };
+    document.addEventListener("click", rescue, true);
+    document.addEventListener("keydown", rescue, true);
+    return () => {
+      document.removeEventListener("click", rescue, true);
+      document.removeEventListener("keydown", rescue, true);
+    };
+  }, []);
 }
 
 const briefCache = new Map<string, NodeBrief | null>();

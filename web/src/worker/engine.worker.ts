@@ -30,6 +30,9 @@ let scores: Uint32Array;
 let images: string[] = [];
 const indexOf = new Map<string, number>();
 
+/** 画像の表を待つ長さ（ms）。これより遅ければ、まず頭文字のアイコンで見せる。 */
+const IMAGES_WAIT = 1500;
+
 async function boot(base: string) {
   const get = async (path: string) => {
     const r = await fetch(`${base}data/${path}`);
@@ -37,6 +40,16 @@ async function boot(base: string) {
     return r;
   };
   const dataBase = new URL(`${base}data/`, self.location.href).href;
+  const imagesReady = get("images.json")
+    .then((r) => r.json())
+    .then((t) => expandImages(t, dataBase))
+    .catch((e: unknown) => {
+      console.warn("画像の一覧を読み込めませんでした。頭文字のアイコンで表示します。", e);
+      return [] as string[];
+    });
+  void imagesReady.then((list) => {
+    if (list.length) images = list;
+  });
   const [, metaJson, graph, index, search, imageList] = await Promise.all([
     init({ module_or_path: wasmUrl }),
     get("meta.json").then((r) => r.json()),
@@ -44,16 +57,14 @@ async function boot(base: string) {
     get("index.json").then((r) => r.json()),
     get("search.txt").then((r) => r.text()),
     // 画像の表は無くても動く（頭文字のアイコンになる）ので、読めなくても起動は続ける。
-    get("images.json")
-      .then((r) => r.json())
-      .then((t) => expandImages(t, dataBase))
-      .catch((e: unknown) => {
-        console.warn("画像の一覧を読み込めませんでした。頭文字のアイコンで表示します。", e);
-        return [] as string[];
-      }),
+    // ただし届くのが遅いときは待たずに起動し、届いたところから使う。
+    Promise.race([
+      imagesReady,
+      new Promise<string[]>((resolve) => setTimeout(() => resolve([]), IMAGES_WAIT)),
+    ]),
   ]);
   meta = metaJson;
-  images = imageList;
+  if (imageList.length) images = imageList;
   ids = index.ids;
   labels = index.labels;
   engine = new Engine(new Uint8Array(graph), search);

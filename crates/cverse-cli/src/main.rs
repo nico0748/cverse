@@ -32,8 +32,38 @@ const USAGE: &str = "\
   cverse-cli bench <data-dir> [--pairs N]          片方向 BFS と双方向 BFS を比べる
   cverse-cli candidates <source-dir>               名寄せの候補を JSON で出す";
 
+/// 値を取るオプション。
+const FLAGS: [&str; 4] = ["--out", "--images", "--mode", "--pairs"];
+
+/// 引数を確かめて `--name value` の形にそろえる。`--images=none` も受け付け、知らないオプションや
+/// 値の無いオプションはエラーにする（打ち間違いで画像の方針が既定に戻る、といった事故を防ぐ）。
+fn normalize_args(raw: Vec<String>) -> Result<Vec<String>> {
+    let mut args = Vec::with_capacity(raw.len());
+    let mut iter = raw.into_iter();
+    while let Some(arg) = iter.next() {
+        if !arg.starts_with("--") {
+            args.push(arg);
+            continue;
+        }
+        let (name, inline) = match arg.split_once('=') {
+            Some((name, value)) => (name.to_string(), Some(value.to_string())),
+            None => (arg, None),
+        };
+        if !FLAGS.contains(&name.as_str()) {
+            bail!("知らないオプションです: {name}\n\n{USAGE}");
+        }
+        let value = match inline.or_else(|| iter.next()) {
+            Some(value) if !value.is_empty() && !value.starts_with("--") => value,
+            _ => bail!("{name} には値が必要です"),
+        };
+        args.push(name);
+        args.push(value);
+    }
+    Ok(args)
+}
+
 fn main() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args = normalize_args(std::env::args().skip(1).collect())?;
     let flag = |name: &str| {
         args.iter()
             .position(|a| a == name)
@@ -232,4 +262,26 @@ fn today() -> String {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
     format!("{y:04}-{m:02}-{d:02}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_args;
+
+    fn run(args: &[&str]) -> Result<Vec<String>, String> {
+        normalize_args(args.iter().map(|a| a.to_string()).collect()).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn options_are_checked_strictly() {
+        assert_eq!(
+            run(&["build", "data", "--out", "o", "--images=none"]).unwrap(),
+            ["build", "data", "--out", "o", "--images", "none"]
+        );
+        // 打ち間違いや値の付け忘れを、黙って既定の動きにしない。
+        assert!(run(&["build", "data", "--out", "o", "--image", "none"]).is_err());
+        assert!(run(&["build", "data", "--out", "o", "--images"]).is_err());
+        assert!(run(&["build", "data", "--images", "--out", "o"]).is_err());
+        assert!(run(&["build", "data", "--out="]).is_err());
+    }
 }

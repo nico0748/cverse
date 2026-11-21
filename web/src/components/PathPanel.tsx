@@ -204,10 +204,10 @@ export function PathPanel({
         {ready && !same && result && !result.found && (
           <p className="panel__msg">
             この条件ではつながる道が見つかりませんでした。
-            {draft.mode === "main"
-              ? "探し方を「最短」か「主役を優先」に変えると見つかることがあります。"
-              : filtered
-                ? "上の「絞り込みを外す」で見つかることがあります。"
+            {filtered
+              ? "上の「絞り込みを外す」で見つかることがあります。"
+              : draft.mode === "main"
+                ? "探し方を「最短」か「主役を優先」に変えると見つかることがあります。"
                 : "この 2 つは、収録しているデータの中ではつながっていません。"}
           </p>
         )}

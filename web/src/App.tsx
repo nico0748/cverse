@@ -12,7 +12,7 @@ import { PathPanel, type PathDraft } from "./components/PathPanel";
 import { SearchBox } from "./components/SearchBox";
 import { Thumb } from "./components/Thumb";
 import { engine } from "./lib/engine";
-import { useBriefs, useNarrow } from "./lib/hooks";
+import { useBriefs, useFocusRescue, useNarrow } from "./lib/hooks";
 import { sceneFromPath, sceneFromView, type SceneNode } from "./lib/scene";
 import { markSeen, seen, useFavorites, useHistory } from "./lib/store";
 import { useTheme } from "./lib/theme";
@@ -26,6 +26,13 @@ interface HistoryState {
   trail?: unknown;
   /** 「つながりを調べる」を開いたときに積んだ履歴か（閉じるときに 1 つ戻ればよい）。 */
   opened?: boolean;
+}
+
+/** つながりの結果を一言で（詳細の見出しと、畳んだシートの両方で同じ言い方をする）。 */
+function pathSummary(path: PathData, from: NodeBrief | null | undefined, to: NodeBrief | null | undefined): string {
+  if (path.hops <= 1) return "直接つながっています";
+  if (from?.kind === "va" && to?.kind === "va" && path.costar > 0) return `共演で${path.costar}ステップ`;
+  return `${path.hops}回たどるとつながります`;
 }
 
 function initialTrail(route: RouteState): string[] {
@@ -59,7 +66,8 @@ export function App() {
   const [pathError, setPathError] = useState(false);
   const [draft, setDraft] = useState<PathDraft>({ from: null, to: null, mode: route.path?.mode ?? "bfs" });
   const [picking, setPicking] = useState<"from" | "to" | null>(null);
-  const [sheet, setSheet] = useState<Sheet>("peek");
+  // 相手を選ぶ前の「つながりを調べる」は入力欄が本体なので、スマホでも開いた状態から始める。
+  const [sheet, setSheet] = useState<Sheet>(route.pathOpen && !route.path ? "full" : "peek");
   const [aboutOpen, setAboutOpen] = useState(false);
   const [hint, setHint] = useState(() => !seen("graph-hint"));
   const [announcement, setAnnouncement] = useState("");
@@ -67,7 +75,9 @@ export function App() {
   const { history: visited, visit, clear: clearHistory, restore: restoreHistory } = useHistory();
   const { theme, toggle: toggleTheme } = useTheme();
   const narrow = useNarrow();
+  useFocusRescue();
   const panelRef = useRef<HTMLElement>(null);
+  const dragRef = useRef({ y: 0, moved: false });
   const bodyRef = useRef<HTMLDivElement>(null);
   // あとから呼ばれる処理（検索の結果、おまかせ など）が古い状態で動かないよう、最新の状態を持っておく。
   const live = useRef({ route, trail });
@@ -88,7 +98,11 @@ export function App() {
 
   useEffect(() => {
     const onPop = () => {
-      const next = parseRoute(location.search);
+      const parsed = parseRoute(location.search);
+      // 「戻る」で変わるのは中心だけ。段数と絞り込みは、いま選んでいるものを保つ（外した条件が勝手に戻らないように）。
+      const before = live.current.route;
+      const next = parsed.center || parsed.pathOpen ? { ...parsed, depth: before.depth, filter: before.filter } : parsed;
+      if (next !== parsed) history.replaceState(history.state, "", location.pathname + serializeRoute(next));
       const nextTrail = initialTrail(next);
       live.current = { route: next, trail: nextTrail };
       setRoute(next);
@@ -96,6 +110,7 @@ export function App() {
       setPicking(null);
       // 経路の無い画面へ戻ったら、入力欄も空にする（URL に経路があれば、下の処理が入れ直す）。
       if (!next.path) clearDraft();
+      if (next.pathOpen && !next.path) setSheet("full");
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -238,6 +253,8 @@ export function App() {
     if (start) setDraft({ ...draft, from: start });
     if (!route.pathOpen) commit({ ...route, pathOpen: true }, trail, "push", true);
     setSheet("full");
+    setAnnouncement("「つながりを調べる」を開きました");
+    requestAnimationFrame(() => panelRef.current?.focus({ preventScroll: true }));
   };
 
   const clearPath = () => {
@@ -265,7 +282,9 @@ export function App() {
 
   const onNodeClick = (node: SceneNode) => {
     dismissHint();
-    if (picking && node.kind !== "more") {
+    if (picking) {
+      // 「他 N 件」は端点にできない。押しても、選んでいる途中の状態を崩さない。
+      if (node.kind === "more") return;
       // もう片方の端と同じノードは選べない（選ぶ状態のまま、別のノードを待つ）。
       const other = picking === "from" ? draft.to : draft.from;
       if (other?.id === node.id) return;
@@ -296,12 +315,13 @@ export function App() {
   // ---- 場面 ----
   const showingPath = !!route.path && !!pathData?.found;
   const scene = useMemo(() => {
-    const layout = { portrait: narrow };
+    // シートを半分まで開いたスマホでは図の枠が横長になるので、縦長向けの配置にしない。
+    const layout = { portrait: narrow && sheet !== "half" };
     if (route.path && pathData?.found) return sceneFromPath(pathData, layout);
     if (route.center) return shown ? sceneFromView(shown.view, shown.trail, layout) : null;
     // トップ画面（と、中心が無いままの経路画面）では日替わりの相関図を見せる。
     return heroView && !narrow ? sceneFromView(heroView, []) : null;
-  }, [route.path, route.center, pathData, shown, heroView, narrow]);
+  }, [route.path, route.center, pathData, shown, heroView, narrow, sheet]);
 
   const centerBrief = route.center ? briefs.get(route.center) : undefined;
   const sameEnds = !!route.path && route.path.from === route.path.to;
@@ -362,11 +382,21 @@ export function App() {
   const sheetTitle = tab === "path" ? "つながりを調べる" : (centerBrief?.label ?? "詳細");
   const sheetOpen = sheet !== "peek";
   // シートのつまみ: 押すと開閉、上下に引くと 1 段ずつ動く。
-  const drag = { y: 0, moved: false };
+  const drag = dragRef.current;
   const order: Sheet[] = ["peek", "half", "full"];
+  const stepSheet = (by: number) => setSheet(order[Math.max(0, Math.min(order.length - 1, order.indexOf(sheet) + by))]);
+  const pathHeadline = showingPath && pathData ? pathSummary(pathData, pathFrom, pathTo) : "";
   return (
     <div className={`app${atHome ? " app--home" : ""} app--sheet-${sheet}`}>
-      <a className="skip-link" href={atHome ? "#home" : "#panel"}>
+      <a
+        className="skip-link"
+        href={atHome ? "#home" : "#panel"}
+        onClick={(e) => {
+          // URL に #panel を足すと「戻る」が 1 回ぶん空振りするので、フォーカスだけ移す。
+          e.preventDefault();
+          (atHome ? document.getElementById("home") : panelRef.current)?.focus();
+        }}
+      >
         本文へ移動
       </a>
       <p className="sr-only" role="status">
@@ -464,7 +494,7 @@ export function App() {
               )}
             </div>
             {scene && <Legend />}
-            {notFound && (
+            {notFound && !route.pathOpen && (
               <div className="stage__empty" role="alert">
                 <h1>このページは見つかりませんでした</h1>
                 <p>データの更新で、名前や ID が変わった可能性があります。上の検索欄から探し直してください。</p>
@@ -518,11 +548,13 @@ export function App() {
             onNodeClick={onNodeClick}
             picking={picking !== null}
             theme={theme}
-            zoomControls={!atHome && !!scene}
+            zoomControls={!atHome && !!scene && !(narrow && sheet === "full")}
             label={
               showingPath
                 ? "2 つのノードをつなぐ経路の図。内容は「つながりを調べる」の一覧にもあります。"
-                : `${(route.center ? centerBrief?.label : hero?.label) ?? ""}の相関図。内容は詳細の一覧にもあります。`
+                : `${(route.center ? centerBrief?.label : hero?.label) ?? ""}の相関図。${
+                    route.depth > 1 ? "直接つながるノードは詳細の一覧にもあります。" : "内容は詳細の一覧にもあります。"
+                  }`
             }
           />
         </ErrorBoundary>
@@ -544,8 +576,13 @@ export function App() {
               const dy = e.clientY - drag.y;
               if (Math.abs(dy) < 24) return;
               drag.moved = true;
-              const at = order.indexOf(sheet);
-              setSheet(order[Math.max(0, Math.min(order.length - 1, at + (dy < 0 ? 1 : -1)))]);
+              // 大きく引いたら 2 段ぶん動かす。
+              stepSheet((dy < 0 ? 1 : -1) * (Math.abs(dy) > window.innerHeight * 0.45 ? 2 : 1));
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+              e.preventDefault();
+              stepSheet(e.key === "ArrowUp" ? 1 : -1);
             }}
             onClick={() => {
               if (drag.moved) {
@@ -568,7 +605,7 @@ export function App() {
               ) : (
                 <span className="panel__peek-text">
                   <strong>{sheetTitle}</strong>
-                  {showingPath && pathData && <small>{pathData.hops}回たどる道が見つかりました</small>}
+                  {pathHeadline && <small>{pathHeadline}</small>}
                 </span>
               )}
               <Icon name="chevron" size={16} />

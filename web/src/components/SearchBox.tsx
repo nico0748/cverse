@@ -146,6 +146,10 @@ export function SearchBox({ onPick, placeholder, hotkey, autoFocus, label, sugge
           setQuery(e.target.value);
           setOpen(true);
           setActive(0);
+          // スマホの入口では、候補がキーボードの裏に隠れないよう、検索欄を画面の上へ寄せる。
+          if (large && !open && window.matchMedia("(max-width: 560px)").matches) {
+            e.currentTarget.scrollIntoView({ block: "start", behavior: "smooth" });
+          }
         }}
         // フォーカスが当たっただけでは開かない（トップ画面を開くたびに候補が被さらないように）。
         // 押す・入力する・↓ で開く。

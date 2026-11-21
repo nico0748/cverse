@@ -17,6 +17,7 @@ const SPRITE = 128;
 const MAX_PARALLEL = 6;
 const MAX_SPRITES = 480;
 const RETRY_AFTER = 30_000;
+const LOAD_TIMEOUT = 12_000;
 
 interface Entry {
   url: string;
@@ -31,6 +32,8 @@ interface Entry {
 
 const entries = new Map<string, Entry>();
 const queue: Entry[] = [];
+/** 読み込み中のものと、その取り下げ方。 */
+const loading = new Map<Entry, () => void>();
 const listeners = new Set<() => void>();
 let active = 0;
 let clock = 0;
@@ -83,19 +86,42 @@ function pump() {
     const img = new Image();
     img.decoding = "async";
     img.referrerPolicy = "no-referrer";
+    let settled = false;
     const done = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      loading.delete(entry);
+      img.onload = img.onerror = null;
       active--;
+      try {
+        if (ok) entry.sprite = makeSprite(img, entry.shape, entry.focusY);
+      } catch {
+        ok = false;
+      }
       if (ok) {
-        entry.sprite = makeSprite(img, entry.shape, entry.focusY);
         entry.state = "ready";
         evict();
         listeners.forEach((l) => l());
       } else {
         entry.state = "error";
         entry.failedAt = Date.now();
+        img.src = "";
       }
       pump();
     };
+    // 応答の無い配信元に枠を取られ続けないよう、待つ時間に上限を置く。
+    const timer = window.setTimeout(() => done(false), LOAD_TIMEOUT);
+    loading.set(entry, () => {
+      // 場面が変わって要らなくなった読み込みは、失敗扱いにせず取り下げる。
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      img.onload = img.onerror = null;
+      img.src = "";
+      active--;
+      entries.delete(`${entry.shape}|${entry.url}`);
+    });
     img.onload = () => done(img.naturalWidth > 0);
     img.onerror = () => done(false);
     img.src = entry.url;
@@ -125,6 +151,9 @@ export function dropQueued() {
   for (const entry of queue.splice(0)) {
     if (entry.state === "queued") entries.delete(`${entry.shape}|${entry.url}`);
   }
+  // 読み込み中のものも取り下げて、新しい場面の画像にすぐ枠を回す。
+  for (const cancel of [...loading.values()]) cancel();
+  loading.clear();
 }
 
 // 回線が戻ったら、失敗した画像をやり直せるようにする。
