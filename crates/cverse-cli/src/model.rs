@@ -244,7 +244,7 @@ impl Dataset {
                     r.warnings.push(format!("{id}: sources がありません"));
                 }
                 for s in sources {
-                    if s.url.is_empty() || !is_date(&s.fetched_at) {
+                    if !is_web_url(&s.url) || !is_date(&s.fetched_at) {
                         r.warnings
                             .push(format!("{id}: sources の url / fetchedAt が不正です"));
                     }
@@ -273,6 +273,12 @@ impl Dataset {
                     .push(format!("{id}: image を外しました（{why}）"));
                 *image = None;
                 return;
+            }
+            if img.page_url.as_deref().is_some_and(|u| !is_web_url(u)) {
+                r.warnings.push(format!(
+                    "{id}: image の pageUrl を外しました（http(s):// の URL ではありません）"
+                ));
+                img.page_url = None;
             }
             if img.license.is_some() && img.attribution.is_none() && img.page_url.is_none() {
                 r.warnings.push(format!(
@@ -387,6 +393,14 @@ impl Dataset {
 /// 画像 URL が `https://`（外部を直接参照）か、`root` 配下に実在する相対パスかを確かめる。
 pub fn is_remote(url: &str) -> bool {
     url.starts_with("https://")
+}
+
+/// リンク先として出してよい URL か（`http://` か `https://` で始まり、空白を含まない）。
+fn is_web_url(url: &str) -> bool {
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"));
+    rest.is_some_and(|r| !r.is_empty() && !url.contains(char::is_whitespace))
 }
 
 fn check_image_url(root: &Path, url: &str) -> Result<(), String> {

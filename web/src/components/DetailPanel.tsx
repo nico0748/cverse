@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useBriefs } from "../lib/hooks";
-import { imageUrl, loadDetail } from "../lib/shard";
+import { imageUrl, loadDetail, safeHref } from "../lib/shard";
 import {
   FORMAT_LABEL,
   KIND_LABEL,
@@ -144,9 +144,10 @@ function ListSection<T>({
 
 function ImageCredit({ image }: { image: ImageInfo }) {
   const source = image.source ? (SOURCE_LABEL[image.source] ?? image.source) : "出典";
+  const page = safeHref(image.pageUrl);
   return (
     <p className="detail__credit">
-      画像: {image.pageUrl ? <a href={image.pageUrl} target="_blank" rel="noreferrer">{source}</a> : source}
+      画像: {page ? <a href={page} target="_blank" rel="noreferrer">{source}</a> : source}
       {image.attribution && `（${image.attribution}）`}
       {image.license && `・${image.license}`}
     </p>
@@ -376,10 +377,14 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
         <ul>
           {d.sources?.map((s) => (
             <li key={s.url}>
-              <a href={s.url} target="_blank" rel="noreferrer">
-                {SOURCE_LABEL[s.source] ?? s.source}
-                <Icon name="external" size={12} />
-              </a>
+              {safeHref(s.url) ? (
+                <a href={safeHref(s.url)} target="_blank" rel="noreferrer">
+                  {SOURCE_LABEL[s.source] ?? s.source}
+                  <Icon name="external" size={12} />
+                </a>
+              ) : (
+                <span>{SOURCE_LABEL[s.source] ?? s.source}</span>
+              )}
               <span className="muted">{s.fetchedAt} 取得</span>
             </li>
           ))}
