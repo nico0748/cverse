@@ -7,7 +7,7 @@
  * - 人気順に上位 `--works` 本のアニメを取り、作品ごとにキャラと日本語版の声優を集める
  * - キャラは 1 作品あたり 25 人 × `--cast-pages` ページまで（主役が先、次に人気順）
  * - AniList の API は 1 分あたりの回数に上限があるので、間隔を空け、上限に当たったら待ってやり直す
- * - 取得した応答は scripts/.cache/ に置き、やり直すときは使い回す（`--refresh` で取り直す）
+ * - 取得した応答は scripts/.cache/ に置き、途中で止まってもやり直せる。新しい内容に取り直すときは `--refresh`
  * - 画像は URL だけを記録する（サイトは保存せず直接参照する）。AniList の画像は各権利者のもので、
  *   再利用のライセンスは無いので `license` は null にする
  */
@@ -26,6 +26,13 @@ const option = (name, fallback) => {
 const WORKS = Number(option("--works", 300));
 const CAST_PAGES = Number(option("--cast-pages", 2));
 const OUT = option("--out", join(here, "..", "data", "source"));
+// 数でない値を渡されたまま進むと、何も取得せずに空のデータで上書きしてしまう。
+for (const [name, value] of [["--works", WORKS], ["--cast-pages", CAST_PAGES]]) {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    console.error(`${name} には 1 以上の整数を指定してください`);
+    process.exit(1);
+  }
+}
 const REFRESH = args.includes("--refresh");
 const CACHE = join(here, ".cache");
 const API = "https://graphql.anilist.co";
@@ -98,7 +105,8 @@ async function call(query, variables) {
       continue;
     }
     const body = await response.json().catch(() => null);
-    if (!response.ok || !body?.data) {
+    // GraphQL は、エラーがあっても一部のデータを返すことがある。欠けた応答をキャッシュして使い回さない。
+    if (!response.ok || !body?.data || body.errors?.length) {
       console.warn(`  応答が不正（${response.status}、${attempt} 回目）`);
       await sleep(5000 * attempt);
       continue;
@@ -121,14 +129,19 @@ const source = (url) => [{ source: "anilist", url, fetchedAt: today }];
 function personReading(name) {
   const native = clean(name.native);
   if (native && isKana(native)) return native;
-  const romaji = [name.last, name.first].map(clean).filter(Boolean).join("") || clean(name.full);
-  return toHiragana(romaji) || undefined;
+  // 姓と名は別々にかなへ直す（つなげてから直すと「Shin」+「Yuuki」が「しにゅうき」になる）。
+  const parts = [name.last, name.first].map(clean).filter(Boolean);
+  const kana = (parts.length ? parts : [clean(name.full)]).map(toHiragana);
+  return kana.every(Boolean) ? kana.join("") : undefined;
 }
 
 const works = new Map();
 const characters = new Map();
 const voiceActors = new Map();
-const casts = new Map();
+/** キャラ → 作品 → その作品での声優。 */
+const voicedIn = new Map();
+/** 「ナレーター」のように、作品をまたいで同じ人物ではない役。入れると無関係な声優どうしがつながってしまう。 */
+const GENERIC = /^(ナレーター|ナレーション|語り|語り手|Narrator|Narration)$/i;
 const appearances = new Map();
 const relations = [];
 
@@ -137,6 +150,7 @@ function addCast(work, edges) {
     const c = edge.node;
     if (!c?.id) continue;
     const chId = `ch:al-${c.id}`;
+    if (GENERIC.test(clean(c.name.native)) || GENERIC.test(clean(c.name.full))) continue;
     if (!characters.has(chId)) {
       const name = clean(c.name.native) || clean(c.name.full);
       if (!name) continue;
@@ -172,9 +186,10 @@ function addCast(work, edges) {
           sources: source(v.siteUrl),
         });
       }
-      const castKey = `${vaId}|${chId}`;
-      // 同じ声優・キャラの組は 1 行にまとめる（作品ごとに声優が違う場合は、最初に見つけた作品を添える）。
-      if (!casts.has(castKey)) casts.set(castKey, { voiceActor: vaId, character: chId, medium: "anime", work: work.id });
+      if (!voicedIn.has(chId)) voicedIn.set(chId, new Map());
+      const byWork = voicedIn.get(chId);
+      if (!byWork.has(work.id)) byWork.set(work.id, new Set());
+      byWork.get(work.id).add(vaId);
     }
   }
 }
@@ -222,8 +237,19 @@ for (const { work, id } of pending) {
   if (++done % 25 === 0) console.log(`  ${done} / ${pending.length}`);
 }
 
+// 配役の行を作る。どの作品でも同じ声優なら、作品を添えずに 1 行にまとめる。
+// 作品によって声優が違うキャラ（交代など）は、作品ごとに行を分ける。
+const casts = [];
+for (const [chId, byWork] of voicedIn) {
+  const sets = [...byWork.values()].map((set) => [...set].sort().join(","));
+  if (sets.every((s) => s === sets[0])) {
+    for (const vaId of [...byWork.values()][0]) casts.push({ voiceActor: vaId, character: chId, medium: "anime" });
+  } else {
+    for (const [workId, set] of byWork) for (const vaId of set) casts.push({ voiceActor: vaId, character: chId, medium: "anime", work: workId });
+  }
+}
 // 声優のいないキャラは相関図でつながらないので外す。
-const voiced = new Set([...casts.values()].map((c) => c.character));
+const voiced = new Set(casts.map((c) => c.character));
 for (const id of [...characters.keys()]) if (!voiced.has(id)) characters.delete(id);
 const keptAppearances = [...appearances.values()].filter((a) => characters.has(a.character));
 // シリーズの線は、両方の作品が入っているものだけ。向きが逆の重複は 1 本にする。
@@ -243,7 +269,7 @@ const write = (name, list) => writeFile(join(OUT, name), `[\n${list.map((item) =
 await write("voice_actors.json", strip([...voiceActors.values()].sort(byId)));
 await write("characters.json", strip([...characters.values()].sort(byId)));
 await write("works.json", strip([...works.values()].sort(byId)));
-await write("casts.json", [...casts.values()].filter((c) => characters.has(c.character)));
+await write("casts.json", casts.filter((c) => characters.has(c.character)));
 await write("appearances.json", keptAppearances);
 await write("series.json", series);
-console.log(`書き出し: 声優 ${voiceActors.size} / キャラ ${characters.size} / 作品 ${works.size} / 配役 ${casts.size} / 登場 ${keptAppearances.length} / シリーズ ${series.length} → ${OUT}`);
+console.log(`書き出し: 声優 ${voiceActors.size} / キャラ ${characters.size} / 作品 ${works.size} / 配役 ${casts.length} / 登場 ${keptAppearances.length} / シリーズ ${series.length} → ${OUT}`);

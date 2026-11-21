@@ -40,8 +40,9 @@ npm run dev      # http://localhost:5173
 ```
 
 小さなサンプルで動かすときは `CVERSE_DATA=sample npm run data`。
-実データを取り直す・広げるときは `node scripts/fetch-anilist.mjs --works 300 --cast-pages 2`
+実データを取り直す・広げるときは、リポジトリの直下で `node scripts/fetch-anilist.mjs --works 300 --cast-pages 2 --refresh`
 （AniList の API を 2 秒おきに呼ぶので 10 分ほどかかる。作品数とキャラのページ数で範囲を決める）。
+`--refresh` を付けないと、前回の応答（`scripts/.cache/`）を使い回す。途中で止まった取得の続きには付けずに実行する。
 画像を載せる範囲はビルド時に選べる（`cargo run --release -p cverse-cli -- build data/source --out web/public/data --images licensed`。
 `all` が既定、`licensed` は再利用できるライセンス（パブリックドメイン、CC0、クレジット付きの CC BY / CC BY-SA）の画像だけ、`none` は画像なし）。
 
@@ -88,7 +89,7 @@ GitHub Actions、Cloudflare Pages へのデプロイ設定。
   `licensed` で残るのは、パブリックドメイン・CC0 と、作者名か掲載元ページのある CC BY / CC BY-SA だけ（非営利限定や改変禁止は含めない）
 - `data/sample/images/` は自動生成した仮の絵（CC0）。実在の人物・作品の画像ではない
 - `data/sample/` は動作確認用の手書きデータで、お気に入り数・人気は仮の値
-- `data/source/` は AniList から取得した実データ（声優 2,000 人、キャラ 7,748 人、作品 300 本）。画像は AniList の URL を
+- `data/source/` は AniList から取得した実データ（声優 1,998 人、キャラ 7,747 人、作品 300 本）。画像は AniList の URL を
   直接参照していて、再利用のライセンスは無い（`license: null`）。`--images licensed` でビルドすると、これらの画像は載らない
 - 読み（ひらがな）は AniList に無いので、ローマ字表記から機械的に起こしている。「しんいち」が「しにち」になるなど
   一部は正しくない（検索は名前そのものでも当たる）

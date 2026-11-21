@@ -30,6 +30,8 @@ export function toHiragana(romaji) {
     .toLowerCase()
     .replace(/[āīūēōâîûêô]/g, (c) => LONG[c])
     .replace(/n['’]/g, "ん")
+    // 語の終わりの n は「ん」（「Shin Ikkitousen」を「しにっきとうせん」にしない）。
+    .replace(/n(?=[\s\-]|$)/g, "ん")
     .replace(/[\s\-'’.:!?,・/&~()\[\]"“”*+×☆★♪]/g, "");
   if (!s || /[^a-z0-9ん]/.test(s)) return "";
   let out = "";
