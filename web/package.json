@@ -1,0 +1,31 @@
+{
+  "name": "cverse-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "wasm": "wasm-pack build ../crates/cverse-wasm --target web --release --out-dir ../../web/src/wasm/pkg --no-pack",
+    "data": "cargo run --release -p cverse-cli -- build ../data/${CVERSE_DATA:-sample} --out public/data",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sigma/node-border": "^4.0.0",
+    "graphology": "^0.26.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "sigma": "^4.0.6"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "graphology-types": "^0.24.8",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}

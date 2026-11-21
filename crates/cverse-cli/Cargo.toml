@@ -1,0 +1,15 @@
+[package]
+name = "cverse-cli"
+description = "CVerse のデータ検証・配信データ生成・経路探索 CLI"
+edition.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "cverse-cli"
+path = "src/main.rs"
+
+[dependencies]
+cverse-core = { path = "../cverse-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"

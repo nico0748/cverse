@@ -1,0 +1,8 @@
+[package]
+name = "cverse-core"
+description = "CVerse のグラフ中核: CSR 形式・最短経路・近傍抽出・検索・文字列正規化"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+unicode-normalization = "0.1"
