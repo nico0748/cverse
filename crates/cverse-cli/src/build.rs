@@ -218,7 +218,8 @@ pub fn build(ds: &Dataset) -> Built {
                 w.series.as_deref(),
             ]
             .into_iter()
-            .flatten(),
+            .flatten()
+            .chain(w.parts.iter().map(String::as_str)),
         ));
     }
 
@@ -450,7 +451,7 @@ pub fn build(ds: &Dataset) -> Built {
             .collect();
         details.push(obj(json!({
             "id": w.id, "kind": "wk", "name": w.title, "reading": w.reading, "nameEn": w.title_en,
-            "format": w.format, "year": w.year, "series": w.series,
+            "format": w.format, "year": w.year, "series": w.series, "parts": w.parts,
             "anilistId": w.anilist_id, "wikipediaTitle": w.wikipedia_title,
             "sources": sources_json(&w.sources),
             "image": image_json(&images[idx[w.id.as_str()] as usize]),

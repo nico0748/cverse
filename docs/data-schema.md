@@ -122,11 +122,15 @@ VoiceActor / Character / Work は、画像を 1 枚持てる（Work はキービ
 | format | string | ✓ | `TV` `TV_SHORT` `MOVIE` `OVA` `ONA` `SPECIAL` `GAME` |
 | year | number | 推奨 | 開始年 |
 | series | string | | シリーズ名（例: 「Fate」） |
+| parts | string[] | | 1 つにまとめたシーズンのタイトル（例: 「僕のヒーローアカデミア 6」）。検索にも使う |
 | anilistId | number | | |
 | wikipediaTitle | string | | |
 | popularity | number | | AniList popularity など。大量ノード時の優先度に使う |
 | image | Image | | キービジュアル・カバー |
 | sources | Source[] | ✓ | |
+
+同じ作品のシーズン違い（続編・前作でつながるテレビ・配信シリーズと、その間の OVA・特別編）は 1 件の Work にまとめ、
+各シーズンのタイトルを `parts` に入れる。劇場版は別の Work のまま残し、Series でつなぐ。
 
 ## Cast（声優–キャラ）
 
