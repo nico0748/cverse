@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { expandImages, resolveImage } from "./images";
 import { safeHref } from "./shard";
-import { coverCrop } from "./sprites";
+import { TIERS, capFor, coverCrop, tierFor } from "./sprites";
 
 describe("画像の URL", () => {
   it("外部の画像はそのまま、同梱の画像はデータの置き場所から解決する", () => {
@@ -57,5 +57,20 @@ describe("画像の切り抜き", () => {
       expect(c.sx + c.sw).toBeLessThanOrEqual(w + 1e-9);
       expect(c.sy + c.sh).toBeLessThanOrEqual(h + 1e-9);
     }
+  });
+});
+
+describe("絵の細かさの段", () => {
+  it("画面上の高さを満たす最小の段を選び、一番上で頭打ちにする", () => {
+    expect(tierFor(10)).toBe(128);
+    expect(tierFor(128)).toBe(128);
+    expect(tierFor(129)).toBe(256);
+    expect(tierFor(170)).toBe(256);
+    expect(tierFor(5000)).toBe(TIERS[TIERS.length - 1]);
+  });
+  it("元の画像の高さを超える段は作らない", () => {
+    // AniList のキャラ画像（230×345）を正方形に切ると高さ 230。256 の段まで（実際の絵は 230px）。
+    expect(capFor(230)).toBe(256);
+    expect(capFor(100)).toBe(128);
   });
 });
