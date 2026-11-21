@@ -126,6 +126,9 @@ pub struct Work {
     pub format: String,
     pub year: Option<u16>,
     pub series: Option<String>,
+    /// まとめたシーズンのタイトル（例: 「僕のヒーローアカデミア 6」）。検索にも使う。
+    #[serde(default, deserialize_with = "null_as_default")]
+    pub parts: Vec<String>,
     pub anilist_id: Option<u64>,
     pub wikipedia_title: Option<String>,
     pub popularity: Option<u32>,

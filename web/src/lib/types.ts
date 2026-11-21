@@ -216,6 +216,8 @@ export interface WorkDetail extends DetailBase {
   format?: string;
   year?: number;
   series?: string;
+  /** まとめたシーズンのタイトル。 */
+  parts?: string[];
   cast?: { id: string; name: string; role: Role; vas?: CastRef[] }[];
   related?: WorkRef[];
 }

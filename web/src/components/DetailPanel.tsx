@@ -234,6 +234,7 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
     if (d.format) facts.push(["形態", FORMAT_LABEL[d.format] ?? d.format]);
     if (d.year) facts.push(["開始", `${d.year}年`]);
     if (d.series && d.series !== d.name) facts.push(["シリーズ", d.series]);
+    if (d.parts && d.parts.length > 1) facts.push(["シーズン", `${d.parts.length}作をまとめて表示（${d.parts.join("、")}）`]);
     if (d.cast?.length) facts.push(["収録", `キャスト${d.cast.length}人`]);
   }
   if (d.aliases?.length) facts.push(["別名", d.aliases.join("、")]);

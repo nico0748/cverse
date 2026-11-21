@@ -4,7 +4,9 @@
  *
  *   node scripts/fetch-anilist.mjs [--works 300] [--cast-pages 2] [--out data/source]
  *
- * - 人気順に上位 `--works` 本のアニメを取り、作品ごとにキャラと日本語版の声優を集める
+ * - 人気順にアニメを取り、作品ごとにキャラと日本語版の声優を集める。`--works` はまとめた後の作品数
+ * - 同じ作品のシーズン違い（続編・前作でつながるテレビ・配信シリーズと、その間の OVA・特別編）は
+ *   1 つの作品にまとめる。劇場版は単独の作品として残し、まとめた作品とシリーズの線でつなぐ
  * - キャラは 1 作品あたり 25 人 × `--cast-pages` ページまで（主役が先、次に人気順）
  * - AniList の API は 1 分あたりの回数に上限があるので、間隔を空け、上限に当たったら待ってやり直す
  * - 取得した応答は scripts/.cache/ に置き、途中で止まってもやり直せる。新しい内容に取り直すときは `--refresh`
@@ -120,6 +122,14 @@ async function call(query, variables) {
 
 const FORMATS = new Set(["TV", "TV_SHORT", "MOVIE", "OVA", "ONA", "SPECIAL"]);
 const RELATIONS = new Set(["SEQUEL", "PREQUEL", "SIDE_STORY", "SPIN_OFF", "ALTERNATIVE"]);
+/**
+ * シーズンとしてまとめる形態。続編の関係でつながる OVA・特別編（「完結編」など）も本編の続きなので含める。
+ * 劇場版は単独で知られた作品が多いので別に残す。
+ */
+const SEASONAL = new Set(["TV", "TV_SHORT", "ONA", "OVA", "SPECIAL"]);
+/** シーズンのつながりとみなす関係。 */
+const CHAIN = new Set(["SEQUEL", "PREQUEL"]);
+const ROLE_RANK = { MAIN: 3, SUPPORTING: 2, BACKGROUND: 1 };
 const isKana = (s) => /^[぀-ヿ・ー\s・＝=]+$/.test(s);
 const clean = (s) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim() : "");
 const image = (url, pageUrl) => (url && !/\/default\.(jpg|png)$/.test(url) ? { url, source: "anilist", pageUrl, license: null, attribution: null } : undefined);
@@ -194,12 +204,57 @@ function addCast(work, edges) {
   }
 }
 
-console.log(`人気順に ${WORKS} 本の作品を取得します`);
+// ---- シーズンのまとめ ----
+// 続編・前作の関係で union-find する。間に取得していない作品（人気が足りない第 2 期や劇場版）が
+// 挟まっていても、その ID を介してつながるようにする。
+const parent = new Map();
+const find = (id) => {
+  let root = id;
+  while (parent.has(root) && parent.get(root) !== root) root = parent.get(root);
+  let cur = id;
+  while (cur !== root) {
+    const next = parent.get(cur) ?? root;
+    parent.set(cur, root);
+    cur = next;
+  }
+  return root;
+};
+const union = (a, b) => {
+  const ra = find(a);
+  const rb = find(b);
+  if (ra !== rb) parent.set(rb < ra ? ra : rb, rb < ra ? rb : ra);
+};
+/** 作品 → まとめた先の作品 ID。シーズンでない作品は自分自身。 */
+function groupOf(work) {
+  return SEASONAL.has(work.format) ? `group:${find(work.id)}` : work.id;
+}
+const groupCount = () => new Set([...works.values()].map(groupOf)).size;
+
+/** 区切り（空白・記号）で終わる共通の頭。シーズン名を外したシリーズ名に使う。 */
+const SEPARATOR = /[\s～~〜?？!！:：\-–―・/（(「『【\[]/u;
+const TRIM = /[\s～~〜:：\-–―・/（(「『【\[]+$/u;
+function commonTitle(titles) {
+  const list = titles.map((t) => Array.from(t));
+  if (list.length < 2) return titles[0] ?? "";
+  let n = 0;
+  while (list.every((t) => n < t.length && t[n] === list[0][n])) n++;
+  const head = list[0].slice(0, n).join("").replace(TRIM, "");
+  if (Array.from(head).length < 2) return "";
+  // 語の途中で切れていないか（どのタイトルも、頭の直後が終わりか区切り）。
+  const len = Array.from(head).length;
+  const whole = list.every((t) => {
+    const rest = t.slice(len).join("");
+    return rest === "" || SEPARATOR.test(rest[0]);
+  });
+  return whole ? head : "";
+}
+
+console.log(`人気順に、まとめた後で ${WORKS} 本になるまで作品を取得します`);
 const pending = [];
-for (let page = 1; works.size < WORKS; page++) {
+for (let page = 1; groupCount() < WORKS; page++) {
   const data = await call(LIST_QUERY, { page });
   for (const m of data.Page.media) {
-    if (works.size >= WORKS) break;
+    if (groupCount() >= WORKS) break;
     if (!FORMATS.has(m.format)) continue;
     const title = clean(m.title.native) || clean(m.title.romaji);
     if (!title) continue;
@@ -208,6 +263,7 @@ for (let page = 1; works.size < WORKS; page++) {
       title,
       reading: toHiragana(clean(m.title.romaji)) || undefined,
       titleEn: clean(m.title.english) || clean(m.title.romaji) || undefined,
+      romaji: clean(m.title.romaji) || undefined,
       format: m.format,
       year: m.startDate?.year ?? undefined,
       anilistId: m.id,
@@ -219,10 +275,13 @@ for (let page = 1; works.size < WORKS; page++) {
     addCast(work, m.characters?.edges);
     if (m.characters?.pageInfo?.hasNextPage) pending.push({ work, id: m.id });
     for (const r of m.relations?.edges ?? []) {
-      if (r.node?.type === "ANIME" && RELATIONS.has(r.relationType)) relations.push({ from: work.id, to: `wk:al-${r.node.id}`, relation: r.relationType });
+      if (r.node?.type !== "ANIME") continue;
+      const to = `wk:al-${r.node.id}`;
+      if (RELATIONS.has(r.relationType)) relations.push({ from: work.id, to, relation: r.relationType });
+      if (CHAIN.has(r.relationType)) union(work.id, to);
     }
   }
-  console.log(`  作品 ${works.size} / ${WORKS}`);
+  console.log(`  作品 ${groupCount()} / ${WORKS}（シーズンをまとめる前は ${works.size}）`);
   if (!data.Page.pageInfo.hasNextPage) break;
 }
 
@@ -235,6 +294,66 @@ for (const { work, id } of pending) {
     if (!data.Media?.characters?.pageInfo?.hasNextPage) break;
   }
   if (++done % 25 === 0) console.log(`  ${done} / ${pending.length}`);
+}
+
+// シーズンをまとめる。代表は一番早い（同じ年なら AniList の ID が小さい）シーズン。
+const members = new Map();
+for (const work of works.values()) {
+  const g = groupOf(work);
+  if (!members.has(g)) members.set(g, []);
+  members.get(g).push(work);
+}
+const mergedId = new Map();
+const merged = new Map();
+for (const list of members.values()) {
+  list.sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999) || a.anilistId - b.anilistId);
+  const first = list[0];
+  for (const w of list) mergedId.set(w.id, first.id);
+  if (list.length === 1) {
+    merged.set(first.id, first);
+    continue;
+  }
+  const title = commonTitle(list.map((w) => w.title)) || first.title;
+  const romaji = commonTitle(list.map((w) => w.romaji ?? ""));
+  merged.set(first.id, {
+    ...first,
+    title,
+    reading: (romaji && toHiragana(romaji)) || first.reading,
+    titleEn: commonTitle(list.map((w) => w.titleEn ?? "")) || first.titleEn,
+    format: list.find((w) => w.format === "TV")?.format ?? first.format,
+    series: title,
+    parts: list.map((w) => w.title),
+    popularity: Math.max(...list.map((w) => w.popularity)),
+    sources: list.flatMap((w) => w.sources),
+  });
+}
+const biggest = [...merged.values()].filter((w) => w.parts).sort((a, b) => b.parts.length - a.parts.length);
+console.log(`シーズンをまとめました: ${works.size} 本 → ${merged.size} 本（まとめた作品 ${biggest.length}）`);
+for (const w of biggest.slice(0, 12)) console.log(`  ${w.title} ← ${w.parts.join(" / ")}`);
+works.clear();
+for (const [id, w] of merged) works.set(id, w);
+// 登場と配役の作品をまとめた先へ付け替える。役の重さは一番重いシーズンのものを使う。
+const regrouped = new Map();
+for (const a of appearances.values()) {
+  const work = mergedId.get(a.work) ?? a.work;
+  const key = `${a.character}|${work}`;
+  const prev = regrouped.get(key);
+  if (!prev || ROLE_RANK[a.role] > ROLE_RANK[prev.role]) regrouped.set(key, { ...a, work });
+}
+appearances.clear();
+for (const [k, a] of regrouped) appearances.set(k, a);
+for (const byWork of voicedIn.values()) {
+  for (const [workId, set] of [...byWork]) {
+    const to = mergedId.get(workId) ?? workId;
+    if (to === workId) continue;
+    byWork.delete(workId);
+    if (!byWork.has(to)) byWork.set(to, new Set());
+    for (const v of set) byWork.get(to).add(v);
+  }
+}
+for (const r of relations) {
+  r.from = mergedId.get(r.from) ?? r.from;
+  r.to = mergedId.get(r.to) ?? r.to;
 }
 
 // 配役の行を作る。どの作品でも同じ声優なら、作品を添えずに 1 行にまとめる。
@@ -255,7 +374,7 @@ const keptAppearances = [...appearances.values()].filter((a) => characters.has(a
 // シリーズの線は、両方の作品が入っているものだけ。向きが逆の重複は 1 本にする。
 const seen = new Set();
 const series = relations.filter((r) => {
-  if (!works.has(r.to)) return false;
+  if (!works.has(r.to) || r.from === r.to) return false;
   const key = [r.from, r.to].sort().join("|");
   if (seen.has(key)) return false;
   seen.add(key);
@@ -268,7 +387,7 @@ await mkdir(OUT, { recursive: true });
 const write = (name, list) => writeFile(join(OUT, name), `[\n${list.map((item) => JSON.stringify(item)).join(",\n")}\n]\n`);
 await write("voice_actors.json", strip([...voiceActors.values()].sort(byId)));
 await write("characters.json", strip([...characters.values()].sort(byId)));
-await write("works.json", strip([...works.values()].sort(byId)));
+await write("works.json", strip([...works.values()].map(({ romaji, ...w }) => w).sort(byId)));
 await write("casts.json", casts.filter((c) => characters.has(c.character)));
 await write("appearances.json", keptAppearances);
 await write("series.json", series);
