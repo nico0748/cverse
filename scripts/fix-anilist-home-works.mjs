@@ -2,7 +2,8 @@
 /**
  * AniList 由来のキャラが「端役で出た別の作品」にだけつながり、本来の作品につながっていないのを直す。
  *
- *   node scripts/fix-anilist-home-works.mjs [--min-favourites 1] [--keep-cameos] [--add-characters] [--out data/source] [--refresh]
+ *   node scripts/fix-anilist-home-works.mjs [--min-favourites 1] [--keep-cameos] [--add-characters]
+ *     [--supporting-favourites 100] [--fixed-voice-actors] [--out data/source] [--refresh]
  *
  * なぜ起きるか: fetch-anilist.mjs は、人気上位の作品だけ配役を全部取り、ほかの作品は「集まった声優の出演作（人気順 25 作品）」
  * からその声優のキャラだけを足す。そのため、人気が上位に届かない作品（例: 俺の妹がこんなに可愛いわけがない）の主役でも、
@@ -10,19 +11,23 @@
  * 出たカメオ（例: エロマンガ先生の五更瑠璃）は配役の一覧から入るので、カメオの作品にだけつながってしまう。
  * 声の無い登場（例: 僕は友達が少ないの五更瑠璃。AniList では声優が空）も配役の一覧から入っていた。
  *
- * このスクリプトは、登場がすべて端役（BACKGROUND）のキャラについて、AniList のキャラのページ（出演作と各作品の声優）を取り、
+ * 同じ理由で、主役ごと抜ける作品もある（魔都精兵のスレイブの羽前京香・出雲天花）。そこで、まず全作品の配役 1 ページ目を取り、
+ * 収集済みのキャラの登場・役・声優を入れ直し、まだ収集していない主役（MAIN）と人気の脇役を足す。主役の声優をまだ収集して
+ * いなければ、その声優も足す（`--fixed-voice-actors` で足さない）。足したあと主役が残っていないかは check-main-cast.mjs で確かめる。
+ *
+ * 次に、登場がすべて端役（BACKGROUND）のキャラについて、AniList のキャラのページ（出演作と各作品の声優）を取り、
  * - 収集済みの声優が演じている、収集済みの作品への登場を足す（端役より重い役なら役も上げる）。作品は増やさない
  * - そのキャラに日本語の声優がいない作品への登場を外す
  * そのあと、データ全体について、別の作品で主役・脇役のキャラが、シリーズでつながらない作品に端役で出ている登場（ゲスト出演）を
- * 外す（`--keep-cameos` で残す）。声優は増やさない（fetch-anilist.mjs の「声優は固定」と同じ方針）。
+ * 外す（`--keep-cameos` で残す）。主役の声優を除き、声優は増やさない（fetch-anilist.mjs の「声優は固定」と同じ方針）。
  *
  * fetch-anilist.mjs のあと、fetch-wikipedia-games.mjs の前に実行する。何度実行しても同じ結果になる。
  */
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { toHiragana } from "./romaji.mjs";
+import { call as callApi, clean, fetchFirstCastPages, GENERIC, mainVoices, workOfMediaMap } from "./anilist-cast.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -43,11 +48,18 @@ if (!Number.isSafeInteger(MIN_FAVOURITES) || MIN_FAVOURITES < 0) {
   process.exit(1);
 }
 const KEEP_CAMEOS = args.includes("--keep-cameos");
-// 配役の一覧にいて、まだ収集していないキャラも足すか。既定では足さない（キャラが倍近くに増え、データの規模が変わるため）。
+// 配役の一覧にいて、まだ収集していないキャラをすべて足すか。既定では足さない（キャラが倍近くに増え、データの規模が変わるため）。
 const ADD_CHARACTERS = args.includes("--add-characters");
+// 既定でも、まだ収集していない主役（MAIN）は足す。脇役（SUPPORTING）は、お気に入りがこの数以上で、声優を収集済みのものだけ足す。
+const SUPPORTING_FAVOURITES = Number(option("--supporting-favourites", 100));
+if (!Number.isSafeInteger(SUPPORTING_FAVOURITES) || SUPPORTING_FAVOURITES < 0) {
+  console.error("--supporting-favourites には 0 以上の整数を指定してください");
+  process.exit(1);
+}
+// 主役の声優をまだ収集していなければ、その声優も足す（主役が抜けないように）。`--fixed-voice-actors` で声優を増やさない。
+const FIXED_VOICE_ACTORS = args.includes("--fixed-voice-actors");
 const REFRESH = args.includes("--refresh");
-const CACHE = join(here, ".cache");
-const API = "https://graphql.anilist.co";
+const call = (query, variables) => callApi(query, variables, { refresh: REFRESH });
 
 const ROLE_RANK = { MAIN: 3, SUPPORTING: 2, BACKGROUND: 1 };
 
@@ -63,53 +75,6 @@ const CHARACTER_QUERY = `query ($id: Int) {
   }
 }`;
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-let lastCall = 0;
-async function call(query, variables) {
-  const key = createHash("sha1").update(query + JSON.stringify(variables)).digest("hex").slice(0, 16);
-  const file = join(CACHE, `${key}.json`);
-  if (!REFRESH) {
-    try {
-      return JSON.parse(await readFile(file, "utf8"));
-    } catch {
-      // キャッシュに無ければ取りに行く。
-    }
-  }
-  for (let attempt = 1; attempt <= 6; attempt++) {
-    await sleep(Math.max(0, lastCall + 2200 - Date.now()));
-    lastCall = Date.now();
-    let response;
-    try {
-      response = await fetch(API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ query, variables }),
-      });
-    } catch (error) {
-      console.warn(`  通信に失敗（${attempt} 回目）: ${error.message}`);
-      await sleep(5000 * attempt);
-      continue;
-    }
-    if (response.status === 429) {
-      const wait = Number(response.headers.get("retry-after") ?? 60) + 1;
-      console.warn(`  回数の上限に当たったので ${wait} 秒待ちます`);
-      await sleep(wait * 1000);
-      continue;
-    }
-    const body = await response.json().catch(() => null);
-    if (response.status === 404) return null;
-    if (!response.ok || !body?.data || body.errors?.length) {
-      console.warn(`  応答が不正（${response.status}、${attempt} 回目）`);
-      await sleep(5000 * attempt);
-      continue;
-    }
-    await mkdir(CACHE, { recursive: true });
-    await writeFile(file, JSON.stringify(body.data));
-    return body.data;
-  }
-  throw new Error("AniList から取得できませんでした");
-}
-
 const load = async (name) => JSON.parse(await readFile(join(OUT, name), "utf8"));
 const characters = await load("characters.json");
 const works = await load("works.json");
@@ -121,15 +86,7 @@ const voiceActors = await load("voice_actors.json");
 const charById = new Map(characters.map((c) => [c.id, c]));
 const workById = new Map(works.map((w) => [w.id, w]));
 /** AniList の作品 ID → まとめた先の作品（シーズン・劇場版は 1 つの作品の出典に並んでいる）。 */
-const workOfMedia = new Map();
-for (const w of works) {
-  if (!w.id.startsWith("wk:al-")) continue;
-  for (const s of w.sources ?? []) {
-    const m = /anilist\.co\/anime\/(\d+)/.exec(s.url ?? "");
-    if (m) workOfMedia.set(Number(m[1]), w.id);
-  }
-  if (w.anilistId) workOfMedia.set(w.anilistId, w.id);
-}
+const workOfMedia = workOfMediaMap(works);
 /** 収集済みの声優（AniList の ID → 声優 ID）。 */
 const vaOfAnilist = new Map(voiceActors.filter((v) => v.anilistId && v.id.startsWith("va:al-")).map((v) => [v.anilistId, v.id]));
 
@@ -156,7 +113,6 @@ for (const c of animeCasts) {
 
 const isAnime = (w) => w.startsWith("wk:al-");
 // 「その他声」のように、作品をまたいで同じ人物ではない役（fetch-anilist.mjs の GENERIC と同じ）。無関係な声優どうしがつながるので外す。
-const GENERIC = /^(ナレーター|ナレーション|語り|語り手|その他声|その他の声|Narrator|Narration|Sonohokasei)$/i;
 let removedGeneric = 0;
 for (const c of characters) {
   if (!c.id.startsWith("ch:al-") || !(GENERIC.test(c.name) || GENERIC.test(c.nameEn ?? ""))) continue;
@@ -169,19 +125,9 @@ for (const c of characters) {
 // 上位にその作品が無いと登場が抜け（俺の妹がこんなに可愛いわけがないの五更瑠璃）、別の声優（幼少期の声など）だけが
 // 残ることがある（夏目友人帳の夏目貴志が藤村歩だけになり、神谷浩史が抜けていた）。
 // 各作品（まとめたシーズンそれぞれ）の配役の 1 ページ目（主役が先、25 人）を取り、収集済みのキャラと声優のぶんを入れ直す。
-const FILL_QUERY = (ids) => `{${ids
-  .map(
-    (id) => `m${id}: Media(id: ${id}) { id characters(page: 1, perPage: 25, sort: [ROLE, FAVOURITES_DESC]) { edges {
-      role
-      node { id name { native full first last alternative } image { large } favourites siteUrl }
-      voiceActorRoles(language: JAPANESE) { roleNotes voiceActor { id } }
-    } } }`,
-  )
-  .join("\n")}}`;
-/** 幼少期・若い頃の声。ほかに声優がいれば、こちらは配役に入れない。 */
-const YOUNG = /young|child|kid|幼少|幼年|少年期|少女期|子供/i;
+// まだ収集していないキャラでも、主役（と人気の脇役）は足す。人気上位に入らない作品は、声優の出演作の上位に入らないと
+// 主役ごと抜ける（魔都精兵のスレイブの羽前京香・出雲天花。1,779 作品で主役が 1 人もいなかった）。
 const isKana = (s) => /^[぀-ヿ・ー\s・＝=]+$/.test(s);
-const clean = (s) => (typeof s === "string" ? s.replace(/\s+/g, " ").trim() : "");
 function personReading(name) {
   const native = clean(name.native);
   if (native && isKana(native)) return native;
@@ -189,51 +135,78 @@ function personReading(name) {
   const kana = (parts.length ? parts : [clean(name.full)]).map(toHiragana);
   return kana.every(Boolean) ? kana.join("") : undefined;
 }
-const mediaIds = [...workOfMedia.keys()].sort((a, b) => a - b);
-const BATCH = 20;
-console.log(`作品 ${mediaIds.length} 本の配役の 1 ページ目を取得します（約 ${Math.ceil((mediaIds.length / BATCH) * 2.2 / 60)} 分）`);
+const today = new Date().toISOString().slice(0, 10);
+const anilistImage = (url, pageUrl) => (url && !/\/default\.(jpg|png)$/.test(url) ? { url, source: "anilist", pageUrl, license: null, attribution: null } : undefined);
+/** AniList の人物（キャラ・声優）を収集データの形にする。 */
+function person(prefix, p, extra = {}) {
+  const name = clean(p.name.native) || clean(p.name.full);
+  if (!name) return null;
+  return {
+    id: `${prefix}:al-${p.id}`,
+    name,
+    reading: personReading(p.name),
+    nameEn: clean(p.name.full) || undefined,
+    ...extra,
+    anilistId: p.id,
+    favourites: p.favourites ?? 0,
+    image: anilistImage(p.image?.large, p.siteUrl),
+    sources: [{ source: "anilist", url: p.siteUrl, fetchedAt: today }],
+  };
+}
+/** 収集していないキャラを、この役なら足すか。 */
+function shouldAdd(role, c, vasCollected) {
+  if (ADD_CHARACTERS) return true;
+  if (role === "MAIN") return true;
+  return role === "SUPPORTING" && vasCollected && (c.favourites ?? 0) >= SUPPORTING_FAVOURITES;
+}
+const castPages = await fetchFirstCastPages([...workOfMedia.keys()], { refresh: REFRESH });
 /** キャラ → 作品 → { role, vas: Set, voiced } */
 const listed = new Map();
-for (let i = 0; i < mediaIds.length; i += BATCH) {
-  const ids = mediaIds.slice(i, i + BATCH);
-  const data = await call(FILL_QUERY(ids), {});
-  for (const id of ids) {
-    const work = workOfMedia.get(id);
-    for (const e of data?.[`m${id}`]?.characters?.edges ?? []) {
-      const c = e.node;
-      if (!c?.id) continue;
-      const chId = `ch:al-${c.id}`;
-      if (GENERIC.test(clean(c.name.native)) || GENERIC.test(clean(c.name.full))) continue;
-      const vaRoles = (e.voiceActorRoles ?? []).filter((r) => r?.voiceActor?.id);
-      const main = vaRoles.filter((r) => !YOUNG.test(r.roleNotes ?? ""));
-      const use = (main.length ? main : vaRoles).map((r) => vaOfAnilist.get(r.voiceActor.id)).filter(Boolean);
-      if (!listed.has(chId)) listed.set(chId, new Map());
-      const p = listed.get(chId).get(work) ?? { role: "BACKGROUND", vas: new Set(), voiced: false };
-      if (ROLE_RANK[e.role] > ROLE_RANK[p.role]) p.role = e.role;
-      if (vaRoles.length) p.voiced = true;
-      for (const v of use) p.vas.add(v);
-      listed.get(chId).set(work, p);
-      if (ADD_CHARACTERS && use.length && !charById.has(chId)) {
-        const name = clean(c.name.native) || clean(c.name.full);
-        if (!name) continue;
-        const record = {
-          id: chId,
-          name,
-          reading: personReading(c.name),
-          nameEn: clean(c.name.full) || undefined,
-          aliases: (c.name.alternative ?? []).map(clean).filter((a) => a && a.length <= 40).slice(0, 6),
-          anilistId: c.id,
-          favourites: c.favourites ?? 0,
-          image: c.image?.large && !/\/default\.(jpg|png)$/.test(c.image.large) ? { url: c.image.large, source: "anilist", pageUrl: c.siteUrl, license: null, attribution: null } : undefined,
-          sources: [{ source: "anilist", url: c.siteUrl, fetchedAt: new Date().toISOString().slice(0, 10) }],
-        };
-        characters.push(record);
-        charById.set(chId, record);
+const addedCharacters = [];
+const addedVoiceActors = [];
+for (const [id, edges] of castPages) {
+  const work = workOfMedia.get(id);
+  for (const e of edges) {
+    const c = e.node;
+    if (!c?.id) continue;
+    const chId = `ch:al-${c.id}`;
+    if (GENERIC.test(clean(c.name.native)) || GENERIC.test(clean(c.name.full))) continue;
+    const voices = mainVoices(e);
+    const role = ["MAIN", "SUPPORTING", "BACKGROUND"].includes(e.role) ? e.role : "BACKGROUND";
+    if (!charById.has(chId) && voices.length) {
+      const collected = voices.some((v) => vaOfAnilist.has(v.id));
+      if (!shouldAdd(role, c, collected)) continue;
+      // 声優を増やさないときは、収集済みの声優が演じるキャラだけ足す。
+      if (!collected && (FIXED_VOICE_ACTORS || role !== "MAIN")) continue;
+      const record = person("ch", c, { aliases: (c.name.alternative ?? []).map(clean).filter((a) => a && a.length <= 40).slice(0, 6) });
+      if (!record) continue;
+      characters.push(record);
+      charById.set(chId, record);
+      addedCharacters.push({ name: record.name, favourites: record.favourites, role, work: workById.get(work)?.title ?? work });
+    }
+    if (!charById.has(chId)) continue;
+    if (role === "MAIN" && !FIXED_VOICE_ACTORS) {
+      for (const v of voices) {
+        if (vaOfAnilist.has(v.id)) continue;
+        const record = person("va", v);
+        if (!record) continue;
+        voiceActors.push(record);
+        vaOfAnilist.set(v.id, record.id);
+        addedVoiceActors.push(record.name);
       }
     }
+    const use = voices.map((v) => vaOfAnilist.get(v.id)).filter(Boolean);
+    if (!listed.has(chId)) listed.set(chId, new Map());
+    const p = listed.get(chId).get(work) ?? { role: "BACKGROUND", vas: new Set(), voiced: false };
+    if (ROLE_RANK[role] > ROLE_RANK[p.role]) p.role = role;
+    if (voices.length) p.voiced = true;
+    for (const v of use) p.vas.add(v);
+    listed.get(chId).set(work, p);
   }
-  if ((i / BATCH + 1) % 50 === 0) console.log(`  ${Math.min(i + BATCH, mediaIds.length)} / ${mediaIds.length}`);
 }
+console.log(`配役の一覧から、まだ収集していないキャラを ${addedCharacters.length} 人、声優を ${addedVoiceActors.length} 人足しました`);
+addedCharacters.sort((a, b) => b.favourites - a.favourites);
+for (const c of addedCharacters.slice(0, Number(process.env.SHOW ?? 25))) console.log(`  ${c.name}（${c.work}、${c.role}）`);
 let filledAppearances = 0;
 let filledRoles = 0;
 let replacedVoices = 0;
