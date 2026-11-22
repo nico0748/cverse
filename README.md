@@ -40,11 +40,12 @@ npm run dev      # http://localhost:5173
 ```
 
 小さなサンプルで動かすときは `CVERSE_DATA=sample npm run data`。
-実データを取り直す・広げるときは、リポジトリの直下で次の 2 つを順に実行する。
+実データを取り直す・広げるときは、リポジトリの直下で次の 3 つを順に実行する。
 
 ```sh
 node scripts/fetch-anilist.mjs --works 300 --cast-pages 2 --va-pages 1 --refresh   # アニメ（AniList）
 node scripts/fetch-wikipedia-games.mjs                                              # 主要ゲーム（日本語版 Wikipedia）
+node scripts/fetch-wikidata-images.mjs                                              # ゲームと Wikipedia 由来の声優の画像（Wikidata / Commons）
 ```
 
 AniList は 2 秒おきに呼ぶので、声優ごとの出演作まで取ると 1 時間半ほどかかる（`--va-pages 0` なら 10 分ほど）。
@@ -52,6 +53,9 @@ AniList は 2 秒おきに呼ぶので、声優ごとの出演作まで取ると
 人気順に何ページ（1 ページ 25 作品）足すか。声優は増やさず、その声優のキャラだけを足す。
 ゲームは `scripts/fetch-wikipedia-games.mjs` の `GAMES` に並べた作品の記事から、キャラと声優の対応を読む。
 アニメのあとに実行すること（アニメ版の同じキャラにまとめ、声優も名前でアニメ側に寄せる）。
+Wikipedia 由来の作品と声優には画像が無いので、`scripts/fetch-wikidata-images.mjs` が Wikidata のロゴ（P154）・画像（P18）から、
+Commons で再利用できるライセンスのものだけを足す。対象は ID が `:wp-` で画像の無い行だけで、それ以外の行には触らない。
+足した画像は、ゲームのスクリプトを実行し直しても同じ ID の行に引き継がれる。横長のロゴは切り抜かず、白い台紙に収めて表示する。
 `--refresh` を付けないと、前回の応答（`scripts/.cache/`）を使い回す。途中で止まった取得の続きには付けずに実行する。
 画像を載せる範囲はビルド時に選べる（`cargo run --release -p cverse-cli -- build data/source --out web/public/data --images licensed`。
 `all` が既定、`licensed` は再利用できるライセンス（パブリックドメイン、CC0、クレジット付きの CC BY / CC BY-SA）の画像だけ、`none` は画像なし）。

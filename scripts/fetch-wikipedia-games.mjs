@@ -9,7 +9,7 @@
  * - 声優は、名前が同じなら AniList 由来の声優に寄せる。いなければ Wikipedia 由来の声優を作る
  * - アニメ版にいる同じ名前のキャラ（作品名にゲームの名前を含む作品に登場するキャラ）は、同じキャラとしてまとめる
  * - fetch-anilist.mjs のあとに実行する。前回このスクリプトが足した行（ID が `:wp-` のもの、medium が game の配役）は
- *   消してから足し直すので、何度実行しても同じ結果になる
+ *   消してから足し直すので、何度実行しても同じ結果になる。fetch-wikidata-images.mjs が足した画像は同じ ID の行に引き継ぐ
  * - Wikipedia は回数制限が厳しいので、記事は 8 秒おきに取り、scripts/.cache/ に置いて使い回す。取り直すときは `--refresh`
  * - 記事の本文は CC BY-SA 4.0。使うのは事実（キャラ名と声優の対応）だけで、出典として記事の URL を残す
  */
@@ -274,8 +274,16 @@ const casts = await readJson("casts.json");
 const appearances = await readJson("appearances.json");
 const series = await readJson("series.json").catch(() => []);
 
-// 前回の実行で足した行を消す。
+// 前回の実行で足した行を消す。ただし fetch-wikidata-images.mjs が足した画像は、同じ ID の行に引き継ぐ。
 const isWp = (id) => typeof id === "string" && id.includes(":wp-");
+const keptImages = new Map([...voiceActors, ...characters, ...works].filter((x) => isWp(x.id) && x.image).map((x) => [x.id, x.image]));
+/** 前回の画像を sources の前に戻す（fetch-wikidata-images.mjs が書く並びと同じ）。 */
+const withKeptImage = (row) => {
+  const image = keptImages.get(row.id);
+  if (!image) return row;
+  const { sources, ...rest } = row;
+  return { ...rest, image, sources };
+};
 const keep = (list, test) => list.filter((x) => !test(x));
 const vaList = keep(voiceActors, (v) => isWp(v.id));
 const gameIds = new Set(GAMES.map((g) => g.id));
@@ -402,9 +410,9 @@ const seriesOut = [...keep(series, (s) => gameIds.has(s.from) || gameIds.has(s.t
 const strip = (list) => list.map((item) => Object.fromEntries(Object.entries(item).filter(([, v]) => v !== undefined && !(Array.isArray(v) && v.length === 0))));
 const byId = (a, b) => (a.id < b.id ? -1 : 1);
 const write = (name, list) => writeFile(join(OUT, name), `[\n${list.map((item) => JSON.stringify(item)).join(",\n")}\n]\n`);
-await write("voice_actors.json", strip([...vaList, ...newVas.values()].sort(byId)));
-await write("characters.json", strip([...chList, ...newChars.values()].sort(byId)));
-await write("works.json", strip([...wkList, ...gameWorks].sort(byId)));
+await write("voice_actors.json", strip([...vaList, ...[...newVas.values()].map(withKeptImage)].sort(byId)));
+await write("characters.json", strip([...chList, ...[...newChars.values()].map(withKeptImage)].sort(byId)));
+await write("works.json", strip([...wkList, ...gameWorks.map(withKeptImage)].sort(byId)));
 await write("casts.json", castsOut);
 await write("appearances.json", appsOut);
 await write("series.json", seriesOut);

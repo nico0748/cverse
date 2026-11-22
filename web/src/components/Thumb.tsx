@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { isWide } from "../lib/sprites";
 import type { Kind } from "../lib/types";
 
 interface Props {
@@ -21,12 +22,15 @@ interface Props {
  */
 export function Thumb({ kind, src, label, size = 36, portrait = false, eager = false }: Props) {
   const [failed, setFailed] = useState<string | null>(null);
+  // ロゴのような横長の画像は、切り抜かずに台紙へ収める（lib/sprites の isWide）。
+  const [wide, setWide] = useState<string | null>(null);
   const show = src && failed !== src;
   const initial = kind === "more" ? "…" : (Array.from(label.trim())[0] ?? "?");
+  const tall = kind === "wk" || portrait;
   return (
     <span
-      className={`thumb thumb--${kind}${portrait ? " thumb--portrait" : ""}`}
-      style={{ width: size, height: kind === "wk" || portrait ? Math.round((size * 4) / 3) : size, fontSize: Math.round(size * 0.46) }}
+      className={`thumb thumb--${kind}${portrait ? " thumb--portrait" : ""}${show && wide === src ? " thumb--wide" : ""}`}
+      style={{ width: size, height: tall ? Math.round((size * 4) / 3) : size, fontSize: Math.round(size * 0.46) }}
       aria-hidden="true"
     >
       {show ? (
@@ -38,6 +42,10 @@ export function Thumb({ kind, src, label, size = 36, portrait = false, eager = f
           referrerPolicy="no-referrer"
           draggable={false}
           onError={() => setFailed(src)}
+          onLoad={(e) => {
+            const img = e.currentTarget;
+            setWide(isWide(img.naturalWidth, img.naturalHeight, tall ? 3 / 4 : 1) ? src : null);
+          }}
         />
       ) : (
         initial

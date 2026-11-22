@@ -68,6 +68,28 @@ export function coverCrop(width: number, height: number, focusY: number, aspect 
   return { sx: (width - sw) / 2, sy: (height - sh) * focusY, sw, sh };
 }
 
+/**
+ * 枠よりずっと横長の画像（ゲームのロゴなど）か。こうした画像は切り抜くと文字の一部しか残らないので、
+ * 切り抜かずに台紙の上へ収める。カバーや人物の写真（縦長か、横長でも 4:3 程度）は当たらない。
+ */
+export function isWide(width: number, height: number, aspect = 1) {
+  return height > 0 && width / height > aspect * 2;
+}
+
+/** 横長の画像を収めるときの台紙の余白（枠の幅に対する割合、左右それぞれ）。 */
+export const WIDE_PADDING = 0.08;
+
+/**
+ * 元の画像の画素をそのまま使えるスプライトの高さ（px）。切り抜く画像は切り抜いた範囲の高さ。
+ * 横長の画像は幅を枠（余白を除く）に合わせるので、そのときの枠の高さ。
+ */
+function sourceHeight(img: HTMLImageElement, shape: Shape, focusY: number) {
+  const { w, h } = HALF[shape];
+  const aspect = w / h;
+  if (isWide(img.naturalWidth, img.naturalHeight, aspect)) return img.naturalWidth / (1 - 2 * WIDE_PADDING) / aspect;
+  return coverCrop(img.naturalWidth, img.naturalHeight, focusY, aspect).sh;
+}
+
 /** 画面上の高さ（端末の画素）を満たす段。一番上の段で頭打ちにする。 */
 export function tierFor(px: number): number {
   return TIERS.find((t) => t >= px) ?? TIERS[TIERS.length - 1];
@@ -82,7 +104,7 @@ function makeSprite(img: HTMLImageElement, shape: Shape, focusY: number, tier: n
   const { w, h } = HALF[shape];
   const crop = coverCrop(img.naturalWidth, img.naturalHeight, focusY, w / h);
   // 元より細かくはしない。引き伸ばしは描くときに 1 回だけ行う。
-  const height = Math.max(1, Math.min(tier, Math.round(crop.sh)));
+  const height = Math.max(1, Math.min(tier, Math.round(sourceHeight(img, shape, focusY))));
   const canvas = document.createElement("canvas");
   canvas.height = height;
   canvas.width = Math.max(1, Math.round((height * w) / h));
@@ -92,6 +114,15 @@ function makeSprite(img: HTMLImageElement, shape: Shape, focusY: number, tier: n
   else ctx.roundRect(0, 0, canvas.width, canvas.height, (canvas.width / 2) * CORNER[shape]);
   ctx.clip();
   ctx.imageSmoothingQuality = "high";
+  if (isWide(img.naturalWidth, img.naturalHeight, w / h)) {
+    // ロゴは透過の黒文字が多いので、白い台紙に縦の中央で収める。
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const dw = canvas.width * (1 - 2 * WIDE_PADDING);
+    const dh = (dw * img.naturalHeight) / img.naturalWidth;
+    ctx.drawImage(img, (canvas.width - dw) / 2, (canvas.height - dh) / 2, dw, dh);
+    return canvas;
+  }
   ctx.drawImage(img, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, canvas.width, canvas.height);
   return canvas;
 }
@@ -135,8 +166,7 @@ function pump() {
       active--;
       try {
         if (ok) {
-          const { w, h } = HALF[entry.shape];
-          entry.cap = capFor(coverCrop(img.naturalWidth, img.naturalHeight, entry.focusY, w / h).sh);
+          entry.cap = capFor(sourceHeight(img, entry.shape, entry.focusY));
           const tier = Math.min(entry.want, entry.cap);
           entry.sprite = makeSprite(img, entry.shape, entry.focusY, tier);
           entry.tier = tier;
