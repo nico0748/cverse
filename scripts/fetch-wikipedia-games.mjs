@@ -157,22 +157,31 @@ export function parseVoices(credit) {
     .split(/\s[\/／]\s/)[0];
   const voices = [];
   const seen = new Set();
-  const push = (name, article, linked = Boolean(article)) => {
+  const push = (name, article, linked, afterArrow) => {
     const n = name.replace(/[（(][^）)]*[）)]/g, "").replace(/\s+/g, " ").trim();
     if (!n || NOT_A_NAME.test(n) || n.length > 20 || /[A-Za-z]{3,}/.test(n) || seen.has(n)) return;
     seen.add(n);
-    voices.push({ name: n, article, linked });
+    voices.push({ name: n, article, linked, afterArrow });
   };
-  const links = [...head.matchAll(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g)];
-  if (links.length) {
-    for (const [, target, label] of links) push(label ?? target, target);
-    return voices;
-  }
-  for (const part of plain(head).split(/[、,，→]|\s+と\s+/)) {
+  // リンクを目印に置き換えてから区切る。リンクの有無にかかわらず、書かれた順に名前を残す。
+  // 「→」の後ろの人だけが交代（afterArrow）。「、」などで並んだ人は同時に演じている。
+  const links = [];
+  const masked = head
+    .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, target, label) => `\u0000${links.push({ target, label }) - 1}\u0000`)
+    .replace(/[（(][^）)]*[）)]/g, "");
+  const parts = masked.split(/([、,，→]|\s+と\s+)/);
+  for (let i = 0; i < parts.length; i += 2) {
+    const afterArrow = i > 0 && parts[i - 1] === "→";
+    const part = parts[i];
+    const refs = [...part.matchAll(/\u0000(\d+)\u0000/g)];
+    if (refs.length) {
+      for (const [, k] of refs) push(links[k].label ?? links[k].target, links[k].target, true, afterArrow);
+      continue;
+    }
     // 「上田麗奈 小野大輔」のように空白で並んだ 2 人。「上田 麗奈」（姓と名の間の空白）は分けない。
-    const tokens = part.trim().split(/\s+/);
-    if (tokens.length > 1 && tokens.every((t) => Array.from(t).length >= 3)) tokens.forEach((t) => push(t, undefined, false));
-    else push(part, undefined, false);
+    const tokens = plain(part).trim().split(/\s+/);
+    if (tokens.length > 1 && tokens.every((t) => Array.from(t).length >= 3)) tokens.forEach((t) => push(t, undefined, false, afterArrow));
+    else push(plain(part), undefined, false, afterArrow);
   }
   return voices;
 }
@@ -343,7 +352,7 @@ for (const game of GAMES) {
       }
     }
     newApps.push({ character: chId, work: game.id, role: "SUPPORTING" });
-    item.voices.forEach((voice, i) => {
+    item.voices.forEach((voice) => {
       let va = vaByName.get(norm(voice.name));
       if (va && !isWp(va.id)) matchedVas++;
       if (!va) {
@@ -360,8 +369,8 @@ for (const game of GAMES) {
         }
         vaByName.set(norm(voice.name), va);
       }
-      // 「A → B」は交代。後の人を replacement にする。
-      newCasts.push({ voiceActor: va.id, character: chId, medium: "game", work: game.id, ...(i > 0 && item.voices.length > 1 ? { kind: "replacement" } : {}) });
+      // 「A → B」は交代。「→」の後ろの人だけを replacement にする。
+      newCasts.push({ voiceActor: va.id, character: chId, medium: "game", work: game.id, ...(voice.afterArrow ? { kind: "replacement" } : {}) });
     });
   }
   report.push(`  ${game.title}: キャラ ${found.size}（アニメ版とまとめた ${merged}）、配役 ${item_count(found)} のうち AniList の声優に一致 ${matchedVas}`);

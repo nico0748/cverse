@@ -25,7 +25,14 @@ const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
   const at = args.indexOf(name);
-  return at >= 0 && args[at + 1] ? args[at + 1] : fallback;
+  if (at < 0) return fallback;
+  const value = args[at + 1];
+  // 値を書き忘れたまま既定値で走ると、指定したつもりの設定と違うデータになる。
+  if (value === undefined || value === "" || value.startsWith("--")) {
+    console.error(`${name} には値を指定してください`);
+    process.exit(1);
+  }
+  return value;
 };
 const WORKS = Number(option("--works", 300));
 const CAST_PAGES = Number(option("--cast-pages", 2));
@@ -434,7 +441,7 @@ for (const id of [...works.keys()]) if (!appearing.has(id)) works.delete(id);
 // シリーズの線は、両方の作品が入っているものだけ。向きが逆の重複は 1 本にする。
 const seen = new Set();
 const series = relations.filter((r) => {
-  if (!works.has(r.to) || r.from === r.to) return false;
+  if (!works.has(r.from) || !works.has(r.to) || r.from === r.to) return false;
   const key = [r.from, r.to].sort().join("|");
   if (seen.has(key)) return false;
   seen.add(key);
