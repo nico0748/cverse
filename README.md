@@ -44,6 +44,7 @@ npm run dev      # http://localhost:5173
 
 ```sh
 node scripts/fetch-anilist.mjs --works 300 --cast-pages 2 --va-pages 1 --refresh   # アニメ（AniList）
+node scripts/fix-anilist-home-works.mjs                                             # 端役だけのキャラを本来の作品につなぐ（AniList）
 node scripts/fetch-wikipedia-games.mjs                                              # 主要ゲーム（日本語版 Wikipedia）
 node scripts/fetch-wikidata-images.mjs                                              # ゲームと Wikipedia 由来の声優の画像（Wikidata / Commons）
 node scripts/fetch-anilist-game-images.mjs                                          # ゲームキャラの画像（AniList）
@@ -55,6 +56,11 @@ python3 scripts/guess_readings.py                                               
 AniList は 2 秒おきに呼ぶので、声優ごとの出演作まで取ると 1 時間半ほどかかる（`--va-pages 0` なら 10 分ほど）。
 `--works` は人気順に集めるアニメの本数（シーズン違いと劇場版は 1 本に数える）、`--va-pages` は集まった声優それぞれの出演作を
 人気順に何ページ（1 ページ 25 作品）足すか。声優は増やさず、その声優のキャラだけを足す。
+`scripts/fix-anilist-home-works.mjs` は、登場がすべて端役（BACKGROUND）のキャラを AniList のキャラのページで照合し、
+収集済みの声優が演じている本来の作品への登場を足す（例: エロマンガ先生のカメオにだけつながっていた五更瑠璃を俺の妹がこんなに可愛いわけがないへ）。
+人気上位に入らない作品は声優の出演作から足すので、主役でも登場が抜けることがあるため。あわせて、声の無い登場と、
+別の作品で主役・脇役のキャラがシリーズでつながらない作品に端役で出る登場（ゲスト出演）を外す（`--keep-cameos` で残す）。
+お気に入りが `--min-favourites`（既定 1）未満のキャラは照合しない。1,300 人ほどで 50 分ほどかかる。
 ゲームは `scripts/fetch-wikipedia-games.mjs` の `GAMES` に並べた作品の記事から、キャラと声優の対応を読む。
 アニメのあとに実行すること（アニメ版の同じキャラにまとめ、声優も名前でアニメ側に寄せる）。
 Wikipedia 由来の作品と声優には画像が無いので、`scripts/fetch-wikidata-images.mjs` が Wikidata のロゴ（P154）・画像（P18）から、
@@ -118,10 +124,10 @@ GitHub Actions、Cloudflare Pages へのデプロイ設定。
   `licensed` で残るのは、パブリックドメイン・CC0 と、作者名か掲載元ページのある CC BY / CC BY-SA だけ（非営利限定や改変禁止は含めない）
 - `data/sample/images/` は自動生成した仮の絵（CC0）。実在の人物・作品の画像ではない
 - `data/sample/` は動作確認用の手書きデータで、お気に入り数・人気は仮の値
-- `data/source/` は実データ（声優 2,589 人、キャラ 34,627 人、アニメ 4,223 作品とゲーム 25 本。シーズン違いと劇場版は 1 作品にまとめてある）。
-  アニメは AniList、ゲームは日本語版 Wikipedia（CC BY-SA 4.0）から取った。Wikipedia 由来のゲームのキャラは 2,555 人中 1,929 人に画像がある（AniList 1,008 人、Bangumi 921 人。残りは画像なし）。
-  作品の読み・声優の読み・活動開始年は Wikidata（CC0）と日本語版 Wikipedia の冒頭の文でも補っている（作品 1,951 件、声優 1,767 人を AniList の ID で Wikidata に照合）。
-  それでも読みの無い作品 1,249 件は辞書（pykakasi）で推定した読みで、`readingGuessed: true` が付いている。アニメの画像は AniList、ゲームキャラの画像は AniList か Bangumi の URL を
+- `data/source/` は実データ（声優 2,586 人、キャラ 34,588 人、アニメ 4,218 作品とゲーム 25 本。シーズン違いと劇場版は 1 作品にまとめてある）。
+  アニメは AniList、ゲームは日本語版 Wikipedia（CC BY-SA 4.0）から取った。Wikipedia 由来のゲームのキャラは 2,541 人中 1,919 人に画像がある（AniList 994 人、Bangumi 925 人。残りは画像なし）。
+  作品の読み・声優の読み・活動開始年は Wikidata（CC0）と日本語版 Wikipedia の冒頭の文でも補っている（作品 1,950 件、声優 1,765 人を AniList の ID で Wikidata に照合）。
+  それでも読みの無い作品 1,262 件は辞書（pykakasi）で推定した読みで、`readingGuessed: true` が付いている。アニメの画像は AniList、ゲームキャラの画像は AniList か Bangumi の URL を
   直接参照していて、再利用のライセンスは無い（`license: null`）。`--images licensed` でビルドすると、これらの画像は載らない
 - 読み（ひらがな）は AniList に無いので、ローマ字表記から機械的に起こしている。「しんいち」が「しにち」になるなど
   一部は正しくない（検索は名前そのものでも当たる）
