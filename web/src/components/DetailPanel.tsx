@@ -20,6 +20,7 @@ const REPO = "https://github.com/nico0748/cverse";
 const SOURCE_LABEL: Record<string, string> = {
   anilist: "AniList",
   bangumi: "Bangumi",
+  schaledb: "SchaleDB",
   wikipedia: "Wikipedia",
   wikidata: "Wikidata",
   "wikimedia-commons": "Wikimedia Commons",

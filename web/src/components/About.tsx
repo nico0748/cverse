@@ -71,7 +71,8 @@ export function About({ open, onClose, meta }: { open: boolean; onClose: () => v
           <h3>データ</h3>
           <p>
             <a href="https://anilist.co" target="_blank" rel="noreferrer">AniList</a>、{" "}
-            <a href="https://bgm.tv" target="_blank" rel="noreferrer">Bangumi</a>（ゲームキャラの画像）と{" "}
+            <a href="https://bgm.tv" target="_blank" rel="noreferrer">Bangumi</a>（ゲームキャラの画像）、{" "}
+            <a href="https://github.com/nico0748/SchaleDB" target="_blank" rel="noreferrer">SchaleDB</a>（ブルーアーカイブの生徒アイコン）と{" "}
             <a href="https://ja.wikipedia.org" target="_blank" rel="noreferrer">Wikipedia 日本語版</a>
             （<a href="https://creativecommons.org/licenses/by-sa/4.0/deed.ja" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>
             ）の情報をもとにしています。各ページの出典は詳細の末尾にあります。
