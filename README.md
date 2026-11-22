@@ -22,7 +22,7 @@ crates/
 web/             画面（TypeScript + React + Vite、描画は Sigma.js + graphology）
 data/
   sample/        開発用サンプル（手書きの小さな表から scripts/gen_sample.py で生成）
-  source/        実データ（AniList のアニメと、日本語版 Wikipedia の主要ゲーム 9 本。scripts/ の 2 つのスクリプトで取得）
+  source/        実データ（AniList のアニメと、日本語版 Wikipedia の主要ゲーム 25 本。scripts/ のスクリプトで取得）
 scripts/         データの取得・生成
 docs/
 ```

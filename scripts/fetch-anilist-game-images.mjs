@@ -51,6 +51,22 @@ export const GAMES = [
   { id: "wk:wp-pjsekai", search: ["Project Sekai", "プロジェクトセカイ"], title: /プロジェクトセカイ|プロセカ|Project ?Sekai|Colorful Stage/i },
   { id: "wk:wp-gakumas", search: ["Gakuen Idolmaster", "学園アイドルマスター"], title: /学園アイドルマスター|Gakuen ?Idolm@?aster|学マス/i },
   { id: "wk:wp-nikke", search: ["NIKKE"], title: /NIKKE/i },
+  { id: "wk:wp-granblue", search: ["Granblue Fantasy", "グランブルーファンタジー"], title: /グランブルーファンタジー|Granblue|ぐらぶるっ/i },
+  { id: "wk:wp-deresute", search: ["Cinderella Girls", "シンデレラガールズ"], title: /シンデレラガールズ|Cinderella Girls/i },
+  { id: "wk:wp-enstars", search: ["Ensemble Stars", "あんさんぶるスターズ"], title: /あんさんぶるスターズ|Ensemble Stars/i },
+  { id: "wk:wp-wutheringwaves", search: ["Wuthering Waves", "鳴潮"], title: /鳴潮|鸣潮|Wuthering Waves/i },
+  { id: "wk:wp-garupa", search: ["BanG Dream"], title: /BanG ?Dream|バンドリ|MyGO|Ave Mujica/i },
+  { id: "wk:wp-arknights", search: ["Arknights", "アークナイツ"], title: /アークナイツ|Arknights|明日方舟/i },
+  { id: "wk:wp-heavenburnsred", search: ["Heaven Burns Red", "ヘブンバーンズレッド"], title: /ヘブンバーンズレッド|Heaven Burns Red/i },
+  { id: "wk:wp-twisted", search: ["Twisted Wonderland", "ツイステッドワンダーランド"], title: /ツイステッドワンダーランド|Twisted[- ]?Wonderland/i },
+  { id: "wk:wp-endfield", search: ["Arknights: Endfield", "エンドフィールド"], title: /エンドフィールド|Endfield|终末地/i },
+  { id: "wk:wp-shadowverse", search: ["Shadowverse", "シャドウバース"], title: /シャドウバース|Shadowverse/i },
+  { id: "wk:wp-idolish7", search: ["IDOLiSH7", "アイドリッシュセブン"], title: /アイドリッシュセブン|IDOLiSH ?7/i },
+  { id: "wk:wp-shinycolors", search: ["Shiny Colors", "シャイニーカラーズ"], title: /シャイニーカラーズ|Shiny ?Colors/i },
+  { id: "wk:wp-identityv", search: ["Identity V", "第五人格"], title: /第五人格|Identity ?V/i },
+  { id: "wk:wp-priconne", search: ["Princess Connect", "プリンセスコネクト"], title: /プリンセスコネクト|Princess Connect/i },
+  { id: "wk:wp-mementomori", search: ["Memento Mori", "メメントモリ"], title: /メメントモリ|Memento ?Mori/i },
+  { id: "wk:wp-loveanddeepspace", search: ["Love and Deepspace", "恋と深空"], title: /恋と深空|恋与深空|Love and Deepspace/i },
 ];
 
 const MEDIA_QUERY = `query ($search: String, $page: Int) {

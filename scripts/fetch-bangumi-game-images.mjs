@@ -47,6 +47,22 @@ export const GAMES = [
   { id: "wk:wp-pjsekai", subject: 309303 },
   { id: "wk:wp-gakumas", subject: 482314 },
   { id: "wk:wp-nikke", subject: 343054 },
+  { id: "wk:wp-granblue", subject: 103372 },
+  { id: "wk:wp-deresute", subject: 138886 },
+  { id: "wk:wp-enstars", subject: 293719 },
+  { id: "wk:wp-wutheringwaves", subject: 385208 },
+  { id: "wk:wp-garupa", subject: 208415 },
+  { id: "wk:wp-arknights", subject: 225878 },
+  { id: "wk:wp-heavenburnsred", subject: 295308 },
+  { id: "wk:wp-twisted", subject: 279089 },
+  { id: "wk:wp-endfield", subject: 374638 },
+  { id: "wk:wp-shadowverse", subject: 185359 },
+  { id: "wk:wp-idolish7", subject: 142274 },
+  { id: "wk:wp-shinycolors", subject: 236488 },
+  { id: "wk:wp-identityv", subject: 228217 },
+  { id: "wk:wp-priconne", subject: 219588 },
+  { id: "wk:wp-mementomori", subject: 377803 },
+  { id: "wk:wp-loveanddeepspace", subject: 431879 },
 ];
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
