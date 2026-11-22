@@ -209,6 +209,8 @@ async function main() {
   await mkdir(CACHE, { recursive: true });
   const load = async (name) => JSON.parse(await readFile(join(OUT, `${name}.json`), "utf8"));
   const works = await load("works");
+  // 前回 guess_readings.py が推定した読みは外してから補う（正確な読みが取れればそちらを使う）。
+  for (const work of works) if (work.readingGuessed) delete work.reading, delete work.readingGuessed;
   const voiceActors = await load("voice_actors");
   const characters = await load("characters");
   const stats = {};
@@ -286,7 +288,14 @@ async function main() {
   // 読みの補い（日本語版 Wikipedia の冒頭の文）。Wikidata にかな表記の無い作品と声優が多いので、記事の冒頭の読みを使う。
   // 記事名が分かっているものはそれを、作品で記事名が分からないものは作品名そのものを引き、見出しが作品名と一致したときだけ使う。
   const fromLead = async (node, name, title, strict) => {
-    const page = await summary(title);
+    let page;
+    try {
+      page = await summary(title);
+    } catch (error) {
+      // 回数制限で取れなかった記事は飛ばす（次に実行したときに取り直す）。
+      console.warn(`  飛ばしました: ${error.message}`);
+      return undefined;
+    }
     if (!page || page.type === "disambiguation") return undefined;
     const lead = leadReading(page.extract);
     if (!lead) return undefined;

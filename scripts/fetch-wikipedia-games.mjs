@@ -164,6 +164,8 @@ export function splitName(raw) {
 }
 
 const NOT_A_NAME = /^(なし|不明|未定|非公開|\?+|？+|-|—|―|ー|N\/A|無し)$/;
+/** 交代の理由として書かれたリンク（「→ 声優B（[[突発性難聴]]のため）」）を声優と取り違えない。 */
+const NOT_A_PERSON = /難聴|療養|休業|降板|病気|体調|逝去|死去|引退/;
 
 /**
  * 「声 - 」の後ろから声優の名前を取り出す。交代（→）や複数（、）はすべて返す。
@@ -178,7 +180,7 @@ export function parseVoices(credit) {
   const seen = new Set();
   const push = (name, article, linked, afterArrow) => {
     const n = name.replace(/[（(][^）)]*[）)]/g, "").replace(/\s+/g, " ").trim();
-    if (!n || NOT_A_NAME.test(n) || n.length > 20 || /[A-Za-z]{3,}/.test(n) || seen.has(n)) return;
+    if (!n || NOT_A_NAME.test(n) || NOT_A_PERSON.test(n) || n.length > 20 || /[A-Za-z]{3,}/.test(n) || seen.has(n)) return;
     seen.add(n);
     voices.push({ name: n, article, linked, afterArrow });
   };

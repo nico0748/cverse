@@ -118,10 +118,10 @@ GitHub Actions、Cloudflare Pages へのデプロイ設定。
   `licensed` で残るのは、パブリックドメイン・CC0 と、作者名か掲載元ページのある CC BY / CC BY-SA だけ（非営利限定や改変禁止は含めない）
 - `data/sample/images/` は自動生成した仮の絵（CC0）。実在の人物・作品の画像ではない
 - `data/sample/` は動作確認用の手書きデータで、お気に入り数・人気は仮の値
-- `data/source/` は実データ（声優 2,591 人、キャラ 34,623 人、アニメ 4,223 作品とゲーム 25 本。シーズン違いと劇場版は 1 作品にまとめてある）。
-  アニメは AniList、ゲームは日本語版 Wikipedia（CC BY-SA 4.0）から取った。Wikipedia 由来のゲームのキャラは 2,551 人中 1,928 人に画像がある（AniList 1,005 人、Bangumi 923 人。残りは画像なし）。
+- `data/source/` は実データ（声優 2,589 人、キャラ 34,623 人、アニメ 4,223 作品とゲーム 25 本。シーズン違いと劇場版は 1 作品にまとめてある）。
+  アニメは AniList、ゲームは日本語版 Wikipedia（CC BY-SA 4.0）から取った。Wikipedia 由来のゲームのキャラは 2,551 人中 1,924 人に画像がある（AniList 1,005 人、Bangumi 919 人。残りは画像なし）。
   作品の読み・声優の読み・活動開始年は Wikidata（CC0）と日本語版 Wikipedia の冒頭の文でも補っている（作品 1,951 件、声優 1,767 人を AniList の ID で Wikidata に照合）。
-  それでも読みの無い作品 2,217 件は辞書（pykakasi）で推定した読みで、`readingGuessed: true` が付いている。アニメの画像は AniList、ゲームキャラの画像は AniList か Bangumi の URL を
+  それでも読みの無い作品 1,253 件は辞書（pykakasi）で推定した読みで、`readingGuessed: true` が付いている。アニメの画像は AniList、ゲームキャラの画像は AniList か Bangumi の URL を
   直接参照していて、再利用のライセンスは無い（`license: null`）。`--images licensed` でビルドすると、これらの画像は載らない
 - 読み（ひらがな）は AniList に無いので、ローマ字表記から機械的に起こしている。「しんいち」が「しにち」になるなど
   一部は正しくない（検索は名前そのものでも当たる）
