@@ -40,10 +40,11 @@ npm run dev      # http://localhost:5173
 ```
 
 小さなサンプルで動かすときは `CVERSE_DATA=sample npm run data`。
-実データを取り直す・広げるときは、リポジトリの直下で次の 4 つを順に実行する。
+実データを取り直す・広げるときは、リポジトリの直下で次の 5 つを順に実行する。
 
 ```sh
 node scripts/fetch-anilist.mjs --works 300 --cast-pages 2 --va-pages 1 --refresh   # アニメ（AniList）
+node scripts/fix-anilist-home-works.mjs                                             # 端役だけのキャラを本来の作品につなぐ（AniList）
 node scripts/fetch-wikipedia-games.mjs                                              # 主要ゲーム（日本語版 Wikipedia）
 node scripts/fetch-anilist-game-images.mjs                                          # ゲームキャラの画像（AniList）
 node scripts/fetch-bangumi-game-images.mjs                                          # 残りのゲームキャラの画像（Bangumi）
@@ -52,6 +53,11 @@ node scripts/fetch-bangumi-game-images.mjs                                      
 AniList は 2 秒おきに呼ぶので、声優ごとの出演作まで取ると 1 時間半ほどかかる（`--va-pages 0` なら 10 分ほど）。
 `--works` は人気順に集めるアニメの本数（シーズン違いと劇場版は 1 本に数える）、`--va-pages` は集まった声優それぞれの出演作を
 人気順に何ページ（1 ページ 25 作品）足すか。声優は増やさず、その声優のキャラだけを足す。
+`scripts/fix-anilist-home-works.mjs` は、登場がすべて端役（BACKGROUND）のキャラを AniList のキャラのページで照合し、
+収集済みの声優が演じている本来の作品への登場を足す（例: エロマンガ先生のカメオにだけつながっていた五更瑠璃を俺の妹がこんなに可愛いわけがないへ）。
+人気上位に入らない作品は声優の出演作から足すので、主役でも登場が抜けることがあるため。あわせて、声の無い登場と、
+別の作品で主役・脇役のキャラがシリーズでつながらない作品に端役で出る登場（ゲスト出演）を外す（`--keep-cameos` で残す）。
+お気に入りが `--min-favourites`（既定 1）未満のキャラは照合しない。1,300 人ほどで 50 分ほどかかる。
 ゲームは `scripts/fetch-wikipedia-games.mjs` の `GAMES` に並べた作品の記事から、キャラと声優の対応を読む。
 アニメのあとに実行すること（アニメ版の同じキャラにまとめ、声優も名前でアニメ側に寄せる）。
 ゲームキャラの画像は `scripts/fetch-anilist-game-images.mjs` が、AniList に載っている関連作品（アンソロジーコミック・PV・

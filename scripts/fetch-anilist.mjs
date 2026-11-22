@@ -177,7 +177,7 @@ const voiceActors = new Map();
 /** キャラ → 作品 → その作品での声優。 */
 const voicedIn = new Map();
 /** 「ナレーター」のように、作品をまたいで同じ人物ではない役。入れると無関係な声優どうしがつながってしまう。 */
-const GENERIC = /^(ナレーター|ナレーション|語り|語り手|Narrator|Narration)$/i;
+const GENERIC = /^(ナレーター|ナレーション|語り|語り手|その他声|その他の声|Narrator|Narration|Sonohokasei)$/i;
 const appearances = new Map();
 const relations = [];
 
@@ -204,7 +204,10 @@ function addCast(work, edges) {
     }
     const role = ["MAIN", "SUPPORTING", "BACKGROUND"].includes(edge.role) ? edge.role : "BACKGROUND";
     const key = `${chId}|${work.id}`;
-    if (!appearances.has(key)) appearances.set(key, { character: chId, work: work.id, role });
+    // 声の無い登場（日本語の声優が空。例: 僕は友達が少ないの五更瑠璃）は入れない。相関図では声優を介して線を引くので、
+    // 入れると声を当てていない作品にキャラがつながってしまう。
+    const voiced = (edge.voiceActors ?? []).some((v) => v?.id);
+    if (voiced && !appearances.has(key)) appearances.set(key, { character: chId, work: work.id, role });
     for (const v of edge.voiceActors ?? []) {
       if (!v?.id) continue;
       const vaId = `va:al-${v.id}`;
