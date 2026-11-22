@@ -348,10 +348,19 @@ for (const game of GAMES) {
       if (!name || name.length > 30 || !entry.voices.length) continue;
       // コラボ一覧の「A & B & C」（3 人以上のまとめ）や、作品名そのもの（「BanG Dream! Ave Mujica」）はキャラではない。
       if ((name.match(/[&＆]/g) ?? []).length >= 2 || WORK_WORDS.some((w) => name.includes(w))) continue;
-      const key = norm(name);
-      if (!found.has(key)) found.set(key, { name, reading, voices: [], page: title });
-      const item = found.get(key);
-      for (const v of entry.voices) if (!item.voices.some((x) => norm(x.name) === norm(v.name))) item.voices.push(v);
+      // 「ナミ & ロビン」「レホス、セルカ」のように 1 つの見出しに 2〜3 人並び、声優も同じ数だけ並ぶときは、順に 1 人ずつに分ける。
+      // 声優の数が合わないとき（「ヘンリー・ジキル&ハイド」を 1 人が演じるなど）は 1 人のキャラのままにする。
+      const parts = name.split(/\s*[&＆、]\s*/).filter(Boolean);
+      const people =
+        parts.length >= 2 && parts.length <= 3 && entry.voices.length === parts.length && !entry.voices.some((v) => v.afterArrow)
+          ? parts.map((part, i) => ({ name: part, reading: undefined, voices: [entry.voices[i]] }))
+          : [{ name, reading, voices: entry.voices }];
+      for (const person of people) {
+        const key = norm(person.name);
+        if (!found.has(key)) found.set(key, { name: person.name, reading: person.reading, voices: [], page: title });
+        const item = found.get(key);
+        for (const v of person.voices) if (!item.voices.some((x) => norm(x.name) === norm(v.name))) item.voices.push(v);
+      }
     }
   }
   // リンクの無い名前は、その記事のどこかでリンクされている声優か、既存の声優のときだけ使う（表の別の列を拾わない）。
