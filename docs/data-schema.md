@@ -23,6 +23,7 @@ data/source/
 
 - 文字列で、全ファイルを通して一意。種別プレフィックスを必ず付ける: `va:` / `ch:` / `wk:`
 - 推奨: AniList 由来は `va:al-95185` `ch:al-40882` `wk:al-16498`、Wikipedia 由来は `wk:wp-genshin`（ゲーム）、`ch:wp-<ハッシュ>`、`va:wp-<ハッシュ>`（AniList に同じ名前の声優がいないとき）
+- Wikipedia 由来のキャラ（`ch:wp-`）にも、AniList で同じ人物が見つかれば `anilistId` と画像を付ける。ID は変えない（アニメ側に同じ人物がいてもまとめない）。AniList で見つからなければ Bangumi の画像を付ける（`source: "bangumi"`）
 - 名寄せで統合した場合は AniList 側の ID を優先して残す
 - ID は更新をまたいで安定させる（URL・お気に入りに使う）
 
@@ -32,7 +33,7 @@ data/source/
 "sources": [{ "source": "anilist", "url": "https://anilist.co/staff/95185", "fetchedAt": "2026-11-22" }]
 ```
 
-`source` は `anilist` | `wikipedia` | `wikidata` | `manual`。`url` と `fetchedAt`(YYYY-MM-DD) は必須。
+`source` は `anilist` | `bangumi` | `wikipedia` | `wikidata` | `manual`。`url` と `fetchedAt`(YYYY-MM-DD) は必須。
 ノード 3 種は `sources` 必須（1 件以上）。エッジは任意。
 
 ## 共通: image（任意）
@@ -52,7 +53,7 @@ VoiceActor / Character / Work は、画像を 1 枚持てる（Work はキービ
 | フィールド | 型 | 必須 | 説明 |
 |---|---|---|---|
 | url | string | ✓ | そのまま表示できる画像の URL。`https://` のみ。データのディレクトリからの相対パス（同梱画像）も可 |
-| source | string | 推奨 | `anilist` \| `wikimedia-commons` \| `wikidata` \| `official` など |
+| source | string | 推奨 | `anilist` \| `bangumi` \| `wikimedia-commons` \| `wikidata` \| `official` など |
 | pageUrl | string | 推奨 | 画像の掲載元ページ（AniList の該当ページ、Commons の `File:` ページなど）。`https://` のみ |
 | license | string \| null | | ライセンス表記（`CC BY-SA 4.0` など）。権利者の著作物で許諾が無いものは `null` |
 | attribution | string \| null | | 作者名やクレジット。不明なら `null` |
