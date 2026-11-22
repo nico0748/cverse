@@ -3,7 +3,7 @@
  *
  * 画面の主役は相関図と、そこに並ぶ顔（画像）。枠や装飾は静かにして、色は種類を示す 3 色と
  * 強調の 1 色（牡丹）に絞る。文字は小さな名前でも読み違えにくい UD ゴシック、
- * 見出しと大きく見せる名前だけ M PLUS 1（アニメやゲームの画面になじむ、角のはっきりしたゴシック）を使う。
+ * 見出しと大きく見せる名前だけ Zen Maru Gothic（太めの丸ゴシック。アニメやゲームの画面になじむ）を使う。
  */
 
 /* ---- 色と大きさの約束 ---- */
@@ -50,12 +50,12 @@
   --shadow-2: 0 2px 6px rgba(20, 27, 47, 0.08), 0 12px 32px rgba(20, 27, 47, 0.14);
   --scrim: rgba(20, 27, 47, 0.42);
 
-  /* 本文は端末の書体（Windows は BIZ UDP ゴシック、Apple はヒラギノ、Android は Noto）。Web フォントは見出しの M PLUS 1 だけ。
-     M PLUS 1 に無い字（☆♪、一部の第 2 水準漢字）は本文と同じゴシックで出し、明朝が混ざらないようにする */
+  /* 本文は端末の書体（Windows は BIZ UDP ゴシック、Apple はヒラギノ、Android は Noto）。Web フォントは見出しの Zen Maru Gothic だけ。
+     Zen Maru Gothic に無い字（全角の ～ －、ハングルなど）は本文と同じゴシックで出し、明朝が混ざらないようにする */
   --font-ui: "BIZ UDPGothic", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", "Noto Sans JP", system-ui, sans-serif;
-  --font-display: "M PLUS 1", var(--font-ui);
-  /* 見出しの太さ: 入口の見出しとロゴは 800、名前（詳細の名前・図の中心・頭文字）は画数の多い字が潰れないよう 700 */
-  --fw-display: 800;
+  --font-display: "Zen Maru Gothic", var(--font-ui);
+  /* 見出しの太さ: 決まった言葉の見出しとロゴは 900、名前（詳細の名前・図の中心・頭文字）は画数の多い字が潰れないよう 700 */
+  --fw-display: 900;
   --fw-name: 700;
   /* 文字の大きさ（1.2 倍刻み）。本文 15px、注記は 12px より小さくしない */
   --fs-xs: 12px;
