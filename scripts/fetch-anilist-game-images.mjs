@@ -8,8 +8,9 @@
  *   アンソロジーコミック・PV・短編アニメ・楽曲 MV など、関連作品のキャラとして多くのゲームキャラが登録されている
  * - ゲームごとに関連作品を探し（作品名がゲームの名前に合うものだけ）、その作品のキャラから同じ人物を探す
  * - 同じ人物とみなすのは、名前（日本語名・別名）が正規化して一致するとき。片方がもう片方を含むだけのとき
- *   （「ホシノ」と「小鳥遊ホシノ」）は、日本語の声優も一致したときだけ。「〔オルタ〕」などの別の姿は含むだけでは合わせない
- * - 画像のほか、AniList のページを出典に足す。キャラの ID は変えない（ch:wp- のまま）
+ *   （「ホシノ」と「小鳥遊ホシノ」）は、日本語の声優も一致したときだけ。「〔オルタ〕」「丹恒・飲月」などの別の姿は、
+ *   名前の一部だけでは元の姿と合わせない
+ * - 画像のほか、AniList のページを出典に足す。キャラの ID は変えない（ch:wp- のまま。アニメ側に同じ人物がいてもまとめない）
  * - fetch-wikipedia-games.mjs のあとに実行する。何度実行しても同じ結果になる
  * - AniList の応答は scripts/.cache/ に置いて使い回す。取り直すときは `--refresh`
  */
@@ -157,6 +158,15 @@ async function mediaCharacters(id) {
   return out;
 }
 
+/** 「沖田総司〔オルタ〕」のような別の姿の名前か。別の姿は見た目が違うので、名前の一部だけでは合わせない。 */
+export const isForm = (name) => /[〔［\[]/.test(name ?? "");
+/**
+ * `name` が `base` の別の姿か（「丹恒・飲月」と「丹恒」、「スカサハ＝スカディ」と「スカサハ」）。
+ * 区切りの後ろに名前が続く形だけを見るので、「キャプテン・ネモ」と「ネモ」のような普通の名前は別の姿とみなさない。
+ */
+export const isFormOf = (name, base) =>
+  Boolean(base) && name.length > base.length && name.startsWith(base) && /^[・＝=]/.test(name.slice(base.length));
+
 /**
  * ゲームのキャラ 1 人に合う AniList のキャラを選ぶ。
  * 名前が一致すればそれ。含むだけなら、声優も一致して、候補が 1 人に絞れるときだけ。
@@ -170,22 +180,19 @@ export function pick(name, vaAnilistIds, candidates) {
     const byVa = exact.filter((c) => c.vas.some((v) => vaAnilistIds.has(v)));
     return byVa.length === 1 ? byVa[0] : null;
   }
-  // 「沖田総司〔オルタ〕」のような別の姿は見た目が違うので、元の姿の画像は使わない。
-  if (Array.from(n).length < 2 || /[〔［\[]/.test(name)) return null;
+  if (Array.from(n).length < 2 || isForm(name)) return null;
   const partial = candidates.filter(
-    (c) => c.names.some((m) => Array.from(m).length >= 2 && (m.includes(n) || n.includes(m))) && c.vas.some((v) => vaAnilistIds.has(v)),
+    (c) =>
+      c.vas.some((v) => vaAnilistIds.has(v)) &&
+      !c.raw.some((r) => isForm(r) || isFormOf(name, r)) &&
+      c.names.some((m) => Array.from(m).length >= 2 && (m.includes(n) || n.includes(m))),
   );
   return partial.length === 1 ? partial[0] : null;
 }
 
 async function main() {
   const readJson = async (name) => JSON.parse(await readFile(join(OUT, name), "utf8"));
-  const [characters, casts, appearances, voiceActors] = await Promise.all(
-    ["characters.json", "casts.json", "appearances.json", "voice_actors.json"].map(readJson),
-  );
-  const byAnilist = new Map(characters.filter((c) => c.id.startsWith("ch:al-")).map((c) => [c.anilistId, c]));
-  /** Wikipedia 由来のキャラ ID → 同じ人物の AniList 由来のキャラ ID。 */
-  const mergeInto = new Map();
+  const [characters, casts, voiceActors] = await Promise.all(["characters.json", "casts.json", "voice_actors.json"].map(readJson));
   const byId = new Map(characters.map((c) => [c.id, c]));
   const vaAnilist = new Map(voiceActors.filter((v) => v.anilistId).map((v) => [v.id, v.anilistId]));
 
@@ -217,6 +224,7 @@ async function main() {
           id: node.id,
           image: node.image.large,
           label: node.name.native ?? node.name.full,
+          raw: [node.name.native, node.name.full, ...(node.name.alternative ?? [])].filter(Boolean),
           names: [...new Set([node.name.native, node.name.full, ...(node.name.alternative ?? [])].map(norm).filter(Boolean))],
           vas: [],
         };
@@ -235,13 +243,8 @@ async function main() {
       if (!found) continue;
       hit++;
       if (!found.names.includes(norm(ch.name))) loose.push(`${ch.name} → ${found.label}`);
-      // アニメ側にすでにいる人物（「Fate/Zero」のイスカンダルなど）なら、そのキャラにまとめる。
-      const same = byAnilist.get(found.id);
-      if (same) {
-        mergeInto.set(ch.id, same.id);
-        same.sources = [...(same.sources ?? []).filter((x) => !ch.sources.some((y) => y.url === x.url)), ...ch.sources];
-        continue;
-      }
+      // アニメ側にも同じ人物（「Fate/Zero」のイスカンダルなど）がいることがあるが、まとめない。
+      // 公開済みの ch:wp- の ID は URL とお気に入りに使われているので、消さずに残す。
       const pageUrl = `https://anilist.co/character/${found.id}`;
       ch.anilistId = found.id;
       ch.image = { url: found.image, source: "anilist", pageUrl, license: null, attribution: null };
@@ -251,18 +254,7 @@ async function main() {
     console.log(`  ${game.id}: 関連作品 ${media.length}、候補 ${candidates.size} 人、画像を付けた ${hit} / ${targets.size}`);
   }
 
-  // まとめたキャラの配役と登場を付け替え、重なった行は 1 つにする。
-  const dedupe = (list, key) => {
-    const seen = new Set();
-    return list.filter((row) => !seen.has(key(row)) && seen.add(key(row)));
-  };
-  const remap = (row) => (mergeInto.has(row.character) ? { ...row, character: mergeInto.get(row.character) } : row);
-  const outCasts = dedupe(casts.map(remap), (r) => `${r.voiceActor}|${r.character}|${r.medium}|${r.work}`);
-  const outApps = dedupe(appearances.map(remap), (r) => `${r.character}|${r.work}`);
-  const outChars = characters.filter((c) => !mergeInto.has(c.id));
-  const write = (name, list) => writeFile(join(OUT, name), `[\n${list.map((item) => JSON.stringify(item)).join(",\n")}\n]\n`);
-  await Promise.all([write("characters.json", outChars), write("casts.json", outCasts), write("appearances.json", outApps)]);
-  console.log(`アニメ側の同じキャラにまとめた: ${mergeInto.size} 人`);
+  await writeFile(join(OUT, "characters.json"), `[\n${characters.map((item) => JSON.stringify(item)).join(",\n")}\n]\n`);
   if (loose.length) console.log(`名前の一部と声優で合わせたもの ${loose.length} 件:\n  ${loose.join("\n  ")}`);
   console.log(`画像を付けた: ${added} / ${total}（Wikipedia 由来のゲームキャラ）→ ${OUT}`);
 }

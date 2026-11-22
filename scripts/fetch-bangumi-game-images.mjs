@@ -15,6 +15,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isForm, isFormOf } from "./fetch-anilist-game-images.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -127,9 +128,12 @@ export function pick(name, vas, candidates) {
     const byVa = exact.filter(voicedBy);
     return byVa.length === 1 ? byVa[0] : null;
   }
-  if (Array.from(n).length < 2 || /[〔［\[]/.test(name)) return null;
+  if (Array.from(n).length < 2 || isForm(name)) return null;
   const partial = candidates.filter(
-    (c) => voicedBy(c) && c.names.some((m) => Array.from(m).length >= 2 && (m.includes(n) || n.includes(m))),
+    (c) =>
+      voicedBy(c) &&
+      !c.raw.some((r) => isForm(r) || isFormOf(name, r)) &&
+      c.names.some((m) => Array.from(m).length >= 2 && (m.includes(n) || n.includes(m))),
   );
   return partial.length === 1 ? partial[0] : null;
 }
@@ -165,11 +169,13 @@ async function main() {
     for (const c of list) {
       const image = c.images?.medium || c.images?.large;
       if (!image) continue;
-      const cand = { id: c.id, label: c.name, image, names: [norm(c.name)].filter(Boolean), vas: (c.actors ?? []).map((a) => norm(a.name)) };
+      const cand = { id: c.id, label: c.name, image, raw: [c.name], names: [norm(c.name)].filter(Boolean), vas: (c.actors ?? []).map((a) => norm(a.name)) };
       // 表示名だけで合わないとき、声優が重なる人物は詳細の別名も見る（中国語名で登録されたキャラなど）。
       if (!ourNames.has(cand.names[0]) && cand.vas.some((v) => ourVas.has(v))) {
         const detail = await get(`/v0/characters/${c.id}`);
-        cand.names.push(...infoboxNames(detail?.infobox).map(norm).filter(Boolean));
+        const extra = infoboxNames(detail?.infobox);
+        cand.raw.push(...extra);
+        cand.names.push(...extra.map(norm).filter(Boolean));
       }
       candidates.push(cand);
     }
