@@ -43,7 +43,26 @@ export const GAMES = [
   { id: "wk:wp-pjsekai", title: "プロジェクトセカイ カラフルステージ! feat. 初音ミク", reading: "ぷろじぇくとせかいからふるすてーじ", year: 2020, pages: ["プロジェクトセカイの登場人物"], match: ["プロジェクトセカイ"] },
   { id: "wk:wp-gakumas", title: "学園アイドルマスター", reading: "がくえんあいどるますたー", year: 2024, pages: ["学園アイドルマスター"], match: ["学園アイドルマスター"] },
   { id: "wk:wp-nikke", title: "勝利の女神：NIKKE", reading: "しょうりのめがみにけ", year: 2022, pages: ["勝利の女神:NIKKE"], match: ["NIKKE"] },
+  { id: "wk:wp-granblue", title: "グランブルーファンタジー", reading: "ぐらんぶるーふぁんたじー", year: 2014, pages: ["グランブルーファンタジー"], match: ["グランブルーファンタジー", "GRANBLUE FANTASY", "ぐらぶるっ"] },
+  { id: "wk:wp-deresute", title: "アイドルマスター シンデレラガールズ スターライトステージ", reading: "あいどるますたーしんでれらがーるずすたーらいとすてーじ", year: 2015, pages: ["アイドルマスター シンデレラガールズの登場人物"], match: ["シンデレラガールズ"] },
+  { id: "wk:wp-enstars", title: "あんさんぶるスターズ!!", reading: "あんさんぶるすたーず", year: 2015, pages: ["あんさんぶるスターズ!!"], match: ["あんさんぶるスターズ"] },
+  { id: "wk:wp-wutheringwaves", title: "鳴潮", reading: "めいちょう", year: 2024, pages: ["鳴潮"], match: ["鳴潮"] },
+  { id: "wk:wp-garupa", title: "バンドリ! ガールズバンドパーティ!", reading: "ばんどりがーるずばんどぱーてぃ", year: 2017, pages: ["BanG Dream!の登場人物"], match: ["BanG Dream", "バンドリ", "MyGO", "Ave Mujica"] },
+  { id: "wk:wp-arknights", title: "アークナイツ", reading: "あーくないつ", year: 2020, pages: ["アークナイツ"], match: ["アークナイツ"] },
+  { id: "wk:wp-heavenburnsred", title: "ヘブンバーンズレッド", reading: "へぶんばーんずれっど", year: 2022, pages: ["ヘブンバーンズレッド"], match: ["ヘブンバーンズレッド"] },
+  { id: "wk:wp-twisted", title: "ディズニー ツイステッドワンダーランド", reading: "でぃずにーついすてっどわんだーらんど", year: 2020, pages: ["ディズニー ツイステッドワンダーランドの登場キャラクター"], match: ["ツイステッドワンダーランド"] },
+  { id: "wk:wp-endfield", title: "アークナイツ：エンドフィールド", reading: "あーくないつえんどふぃーるど", year: 2026, pages: ["アークナイツ:エンドフィールド"], match: ["エンドフィールド"] },
+  { id: "wk:wp-shadowverse", title: "Shadowverse", reading: "しゃどうばーす", year: 2016, pages: ["Shadowverse"], match: ["シャドウバース", "Shadowverse"] },
+  { id: "wk:wp-idolish7", title: "アイドリッシュセブン", reading: "あいどりっしゅせぶん", year: 2015, pages: ["アイドリッシュセブン"], match: ["アイドリッシュセブン"] },
+  { id: "wk:wp-shinycolors", title: "アイドルマスター シャイニーカラーズ", reading: "あいどるますたーしゃいにーからーず", year: 2018, pages: ["アイドルマスター シャイニーカラーズ"], match: ["シャイニーカラーズ"] },
+  { id: "wk:wp-identityv", title: "IdentityV 第五人格", reading: "あいでんてぃてぃふぁいぶだいごじんかく", year: 2018, pages: ["IdentityV 第五人格"], match: ["第五人格"] },
+  { id: "wk:wp-priconne", title: "プリンセスコネクト!Re:Dive", reading: "ぷりんせすこねくとりだいぶ", year: 2018, pages: ["プリンセスコネクト!Re:Dive"], match: ["プリンセスコネクト"] },
+  { id: "wk:wp-mementomori", title: "メメントモリ", reading: "めめんともり", year: 2022, pages: ["メメントモリ (ゲーム)"], match: ["メメントモリ"] },
+  { id: "wk:wp-loveanddeepspace", title: "恋と深空", reading: "こいとしんくう", year: 2024, pages: ["恋と深空"], match: ["恋と深空"] },
 ];
+
+/** ゲームの照合語（作品名の一部）。キャラ名にこれが入っていれば、作品名を拾ったものとして捨てる。 */
+const WORK_WORDS = GAMES.flatMap((g) => g.match).filter((w) => w.length >= 4);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let lastCall = 0;
@@ -145,6 +164,8 @@ export function splitName(raw) {
 }
 
 const NOT_A_NAME = /^(なし|不明|未定|非公開|\?+|？+|-|—|―|ー|N\/A|無し)$/;
+/** 交代の理由として書かれたリンク（「→ 声優B（[[突発性難聴]]のため）」）を声優と取り違えない。 */
+const NOT_A_PERSON = /難聴|療養|休業|降板|病気|体調|逝去|死去|引退/;
 
 /**
  * 「声 - 」の後ろから声優の名前を取り出す。交代（→）や複数（、）はすべて返す。
@@ -159,7 +180,7 @@ export function parseVoices(credit) {
   const seen = new Set();
   const push = (name, article, linked, afterArrow) => {
     const n = name.replace(/[（(][^）)]*[）)]/g, "").replace(/\s+/g, " ").trim();
-    if (!n || NOT_A_NAME.test(n) || n.length > 20 || /[A-Za-z]{3,}/.test(n) || seen.has(n)) return;
+    if (!n || NOT_A_NAME.test(n) || NOT_A_PERSON.test(n) || n.length > 20 || /[A-Za-z]{3,}/.test(n) || seen.has(n)) return;
     seen.add(n);
     voices.push({ name: n, article, linked, afterArrow });
   };
@@ -186,7 +207,7 @@ export function parseVoices(credit) {
   return voices;
 }
 
-const CREDIT = /^[:：]+\s*(?:\[\[声優\|)?(?:声|声優|CV|キャラクターボイス)(?:\]\])?\s*[-－‐–:：]\s*(.+)$/;
+const CREDIT = /^[:：]+\*?\s*(?:\[\[声優\|)?(?:声|声優|CV|キャラクターボイス)(?:\]\])?\s*[-－‐–:：]\s*(.+)$/;
 
 /** 定義リスト（「; 名前」の次の行に「: 声 - 声優」）を読む。 */
 export function parseDefinitionLists(text) {
@@ -325,10 +346,21 @@ for (const game of GAMES) {
     for (const entry of [...parseDefinitionLists(text), ...parseTables(text)]) {
       const { name, reading } = splitName(entry.raw ?? "");
       if (!name || name.length > 30 || !entry.voices.length) continue;
-      const key = norm(name);
-      if (!found.has(key)) found.set(key, { name, reading, voices: [], page: title });
-      const item = found.get(key);
-      for (const v of entry.voices) if (!item.voices.some((x) => norm(x.name) === norm(v.name))) item.voices.push(v);
+      // コラボ一覧の「A & B & C」（3 人以上のまとめ）や、作品名そのもの（「BanG Dream! Ave Mujica」）はキャラではない。
+      if ((name.match(/[&＆]/g) ?? []).length >= 2 || WORK_WORDS.some((w) => name.includes(w))) continue;
+      // 「ナミ & ロビン」「レホス、セルカ」のように 1 つの見出しに 2〜3 人並び、声優も同じ数だけ並ぶときは、順に 1 人ずつに分ける。
+      // 声優の数が合わないとき（「ヘンリー・ジキル&ハイド」を 1 人が演じるなど）は 1 人のキャラのままにする。
+      const parts = name.split(/\s*[&＆、]\s*/).filter(Boolean);
+      const people =
+        parts.length >= 2 && parts.length <= 3 && entry.voices.length === parts.length && !entry.voices.some((v) => v.afterArrow)
+          ? parts.map((part, i) => ({ name: part, reading: undefined, voices: [entry.voices[i]] }))
+          : [{ name, reading, voices: entry.voices }];
+      for (const person of people) {
+        const key = norm(person.name);
+        if (!found.has(key)) found.set(key, { name: person.name, reading: person.reading, voices: [], page: title });
+        const item = found.get(key);
+        for (const v of person.voices) if (!item.voices.some((x) => norm(x.name) === norm(v.name))) item.voices.push(v);
+      }
     }
   }
   // リンクの無い名前は、その記事のどこかでリンクされている声優か、既存の声優のときだけ使う（表の別の列を拾わない）。
