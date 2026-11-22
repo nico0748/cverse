@@ -1,4 +1,5 @@
 import type { Handlers } from "../worker/engine.worker";
+import type { Difficulty } from "./timeattack";
 import { filterArgs, type Filter, type Meta, type NodeBrief, type PathData, type PathMode, type ViewData } from "./types";
 
 /** Web Worker 上のグラフエンジンを Promise で呼ぶ薄いクライアント。 */
@@ -60,6 +61,24 @@ class EngineClient {
   async briefs(ids: string[]): Promise<(NodeBrief | null)[]> {
     await this.ready;
     return this.call("briefs", ids);
+  }
+
+  /** 隣のノード（種類と人気の順）。 */
+  async neighbors(id: string): Promise<NodeBrief[]> {
+    await this.ready;
+    return this.call("neighborList", id);
+  }
+
+  /** 2 つのノードで 1 問作る（最短経路で解けなければ null）。 */
+  async puzzleOf(from: string, to: string) {
+    await this.ready;
+    return this.call("puzzleOf", from, to);
+  }
+
+  /** 難易度に合う 1 問を作る。`seed` を渡すと同じ問題になる（今日の 1 問）。 */
+  async makePuzzle(difficulty: Difficulty, seed: string | null = null) {
+    await this.ready;
+    return this.call("makePuzzle", difficulty, seed);
   }
 
   async randomVoiceActor(): Promise<string | null> {

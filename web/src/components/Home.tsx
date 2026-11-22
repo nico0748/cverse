@@ -17,11 +17,12 @@ interface Props {
   onNavigate: (id: string) => void;
   onRandom: () => void;
   onPath: (from: NodeBrief | null, to: NodeBrief | null) => void;
+  onTimeAttack: () => void;
   onAbout: () => void;
 }
 
 /** 入口の画面。検索・続きから・声優から・作品から・2 人のつながり、のどこからでも入れる。 */
-export function Home({ meta, featured, featuredWorks, favorites, history, hero, compact, onNavigate, onRandom, onPath, onAbout }: Props) {
+export function Home({ meta, featured, featuredWorks, favorites, history, hero, compact, onNavigate, onRandom, onPath, onTimeAttack, onAbout }: Props) {
   // つながりの例: 人気の声優から離れた 2 人を組にする。
   const pairs: [NodeBrief, NodeBrief][] = [];
   for (const [a, b] of [[0, 7], [2, 11], [4, 15]]) {
@@ -59,6 +60,10 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
             <button type="button" className="button" onClick={() => onPath(null, null)}>
               <Icon name="route" />
               2人のつながりを調べる
+            </button>
+            <button type="button" className="button" onClick={onTimeAttack}>
+              <Icon name="timer" />
+              つながりタイムアタック
             </button>
           </div>
         </section>
@@ -135,6 +140,15 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
             </ul>
           </section>
         )}
+
+        <section aria-labelledby="home-ta" className="home__ta">
+          <h2 id="home-ta">つながりタイムアタック</h2>
+          <p className="home__note">出題された声優やキャラから、相関図をたどってゴールまで。何秒で着けるかを競って、結果を X で共有できます。</p>
+          <button type="button" className="button button--primary" onClick={onTimeAttack}>
+            <Icon name="timer" />
+            挑戦する
+          </button>
+        </section>
 
         <footer className="home__foot">
           {meta && (

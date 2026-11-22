@@ -1,3 +1,4 @@
+import { parseGame, serializeGame, type GameRoute } from "./timeattack";
 import { DEFAULT_FILTER, FORMAT_GROUPS, type Filter, type FormatGroup, type PathMode } from "./types";
 
 /** URL に載せる画面状態。中心ノード・段数・絞り込み・経路をすべて URL で再現できる。 */
@@ -8,9 +9,11 @@ export interface RouteState {
   path: { from: string; to: string; mode: PathMode } | null;
   /** 「つながりを調べる」の画面を開いているか。経路が決まっていれば常に開いている。 */
   pathOpen: boolean;
+  /** つながりタイムアタックを開いているか（開いているあいだは、中心と経路を使わない）。 */
+  game: GameRoute | null;
 }
 
-export const EMPTY_ROUTE: RouteState = { center: null, depth: 1, filter: DEFAULT_FILTER, path: null, pathOpen: false };
+export const EMPTY_ROUTE: RouteState = { center: null, depth: 1, filter: DEFAULT_FILTER, path: null, pathOpen: false, game: null };
 
 const PATH_MODES: PathMode[] = ["bfs", "main", "weighted"];
 
@@ -35,6 +38,8 @@ export function parseRoute(search: string): RouteState {
     yearMax: year(yMax),
     mainOnly: q.get("main") === "1",
   };
+  const game = parseGame(q.get("ta"));
+  if (game) return { center: null, depth: 1, filter: DEFAULT_FILTER, path: null, pathOpen: false, game };
   const [from, to] = (q.get("p") ?? "").split("~");
   const mode = q.get("pm") as PathMode;
   const path = from && to ? { from, to, mode: PATH_MODES.includes(mode) ? mode : "bfs" } : null;
@@ -44,11 +49,16 @@ export function parseRoute(search: string): RouteState {
     filter,
     path,
     pathOpen: path !== null || q.get("t") === "path",
+    game: null,
   };
 }
 
 export function serializeRoute(s: RouteState): string {
   const q = new URLSearchParams();
+  if (s.game) {
+    q.set("ta", serializeGame(s.game));
+    return `?${q.toString().replace(/%3A/g, ":").replace(/%7E/g, "~")}`;
+  }
   if (s.center) q.set("c", s.center);
   if (s.depth !== 1) q.set("d", String(s.depth));
   const f = s.filter;

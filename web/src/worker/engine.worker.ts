@@ -9,6 +9,7 @@ import init, { Engine } from "../wasm/pkg/cverse_wasm";
 import wasmUrl from "../wasm/pkg/cverse_wasm_bg.wasm?url";
 import { FORMAT_LABEL, type EdgeType, type Kind, type Meta, type NodeBrief, type PathData, type PathMode, type ViewData } from "../lib/types";
 import { expandImages } from "../lib/images";
+import { DIFFICULTY_HOPS, hashSeed, rng, type Difficulty } from "../lib/timeattack";
 import { NO_NODE, decodePath, decodeView, edgeIrregular, edgeMedia, edgeRole, edgeType } from "./decode";
 
 const KIND: Kind[] = ["va", "ch", "wk"];
@@ -213,7 +214,100 @@ function randomVoiceActor(): string | null {
   return null;
 }
 
-const handlers = { boot, view, path, search, briefs, randomVoiceActor };
+// ---- つながりタイムアタック ----
+
+/** 絞り込みなしで探すときの引数。 */
+const NO_FILTER: FilterArgs = [3, 0, 0, 0, false];
+
+/** 隣のノードを、種類（声優 → キャラ → 作品）と人気の順に並べて返す。 */
+function neighborList(id: string): NodeBrief[] {
+  const u = indexOf.get(id);
+  if (u === undefined) return [];
+  const seen = new Set<number>();
+  const list: number[] = [];
+  for (const [v] of neighbors(u)) {
+    if (!seen.has(v)) {
+      seen.add(v);
+      list.push(v);
+    }
+  }
+  list.sort((a, b) => kinds[a] - kinds[b] || scores[b] - scores[a] || a - b);
+  return list.map(brief);
+}
+
+/** 出題に使う、名前の知られた声優とキャラ（人気の上位）。一度作れば使い回す。 */
+let pool: { va: number[]; ch: number[] } | null = null;
+function puzzlePool() {
+  if (pool) return pool;
+  const top = (kind: number, count: number) => {
+    const list: number[] = [];
+    for (let u = 0; u < kinds.length; u++) if (kinds[u] === kind && engine.neighbors(u).length > 0) list.push(u);
+    return list.sort((a, b) => scores[b] - scores[a] || a - b).slice(0, count);
+  };
+  pool = { va: top(0, 300), ch: top(1, 1200) };
+  return pool;
+}
+
+/** 始点からの段数（`limit` 段まで。届かなければ -1）。 */
+function distances(src: number, limit: number): Int16Array {
+  const dist = new Int16Array(kinds.length).fill(-1);
+  dist[src] = 0;
+  let frontier = [src];
+  for (let d = 1; d <= limit && frontier.length; d++) {
+    const next: number[] = [];
+    for (const u of frontier) {
+      const raw = engine.neighbors(u);
+      for (let i = 0; i < raw.length; i += 2) {
+        const v = raw[i];
+        if (dist[v] >= 0) continue;
+        dist[v] = d;
+        next.push(v);
+      }
+    }
+    frontier = next;
+  }
+  return dist;
+}
+
+interface PuzzleData {
+  from: NodeBrief;
+  to: NodeBrief;
+  shortest: NodeBrief[];
+}
+
+/** 2 つのノードを出題にする。最短経路で解けなければ null。 */
+function puzzleOf(fromId: string, toId: string): PuzzleData | null {
+  const p = path(fromId, toId, "bfs", NO_FILTER);
+  if (!p.found || p.nodes.length < 2) return null;
+  return { from: p.nodes[0], to: p.nodes[p.nodes.length - 1], shortest: p.nodes };
+}
+
+/**
+ * 1 問作る。始点と終点は、人気の上位の声優・キャラから選び、最短で難易度の段数になる組にする。
+ * `seed` を渡すと（今日の 1 問）、同じデータなら誰が開いても同じ問題になる。
+ */
+function makePuzzle(difficulty: Difficulty, seed: string | null): PuzzleData | null {
+  const random = seed ? rng(hashSeed(seed)) : Math.random;
+  const { va, ch } = puzzlePool();
+  const [lo, hi] = DIFFICULTY_HOPS[difficulty];
+  const pick = <T,>(list: T[]) => list[Math.floor(random() * list.length)];
+  for (let tries = 0; tries < 40; tries++) {
+    // 声優とキャラを半々で始点・終点にする。
+    const fromList = random() < 0.5 ? va : ch;
+    const toList = random() < 0.5 ? va : ch;
+    const src = pick(fromList);
+    if (src === undefined) return null;
+    const dist = distances(src, hi);
+    const goals = toList.filter((v) => v !== src && dist[v] >= lo && dist[v] <= hi);
+    if (goals.length === 0) continue;
+    const dst = pick(goals);
+    const p = puzzleOf(ids[src], ids[dst]);
+    if (p) return p;
+  }
+  return null;
+}
+
+const handlers = { boot, view, path, search, briefs, randomVoiceActor, neighborList, puzzleOf, makePuzzle };
 export type Handlers = typeof handlers;
 
 self.onmessage = async (e: MessageEvent<{ id: number; method: keyof Handlers; args: unknown[] }>) => {

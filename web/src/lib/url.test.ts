@@ -9,6 +9,18 @@ describe("URL と画面状態", () => {
     expect(parseRoute("")).toEqual(EMPTY_ROUTE);
   });
 
+  it("タイムアタックの出題を URL で再現できる", () => {
+    const pair: RouteState = { ...EMPTY_ROUTE, game: { kind: "pair", from: "va:al-1", to: "ch:wp-原神-パイモン" } };
+    expect(serializeRoute(pair)).toBe("?ta=va:al-1~ch:wp-%E5%8E%9F%E7%A5%9E-%E3%83%91%E3%82%A4%E3%83%A2%E3%83%B3");
+    expect(parseRoute(serializeRoute(pair))).toEqual(pair);
+    expect(parseRoute("?ta=daily").game).toEqual({ kind: "daily" });
+    expect(parseRoute("?ta=1").game).toEqual({ kind: "lobby" });
+    // 始点と終点が同じなら、問題を選ぶ画面にする。
+    expect(parseRoute("?ta=va:1~va:1").game).toEqual({ kind: "lobby" });
+    // タイムアタック中は、中心や経路を使わない。
+    expect(parseRoute("?ta=1&c=va:1").center).toBeNull();
+  });
+
   it("往復しても変わらない", () => {
     const state: RouteState = {
       center: "va:al-95185",
@@ -16,6 +28,7 @@ describe("URL と画面状態", () => {
       filter: { anime: true, game: false, formats: ["tv", "movie"], yearMin: 2010, yearMax: null, mainOnly: true },
       path: { from: "va:al-1", to: "wk:wp-原神", mode: "weighted" },
       pathOpen: true,
+      game: null,
     };
     const url = serializeRoute(state);
     expect(url).toContain("c=va:al-95185");
