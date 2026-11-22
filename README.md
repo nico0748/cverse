@@ -40,11 +40,12 @@ npm run dev      # http://localhost:5173
 ```
 
 小さなサンプルで動かすときは `CVERSE_DATA=sample npm run data`。
-実データを取り直す・広げるときは、リポジトリの直下で次の 2 つを順に実行する。
+実データを取り直す・広げるときは、リポジトリの直下で次の 3 つを順に実行する。
 
 ```sh
 node scripts/fetch-anilist.mjs --works 300 --cast-pages 2 --va-pages 1 --refresh   # アニメ（AniList）
 node scripts/fetch-wikipedia-games.mjs                                              # 主要ゲーム（日本語版 Wikipedia）
+node scripts/fetch-anilist-game-images.mjs                                          # ゲームキャラの画像（AniList）
 ```
 
 AniList は 2 秒おきに呼ぶので、声優ごとの出演作まで取ると 1 時間半ほどかかる（`--va-pages 0` なら 10 分ほど）。
@@ -52,6 +53,10 @@ AniList は 2 秒おきに呼ぶので、声優ごとの出演作まで取ると
 人気順に何ページ（1 ページ 25 作品）足すか。声優は増やさず、その声優のキャラだけを足す。
 ゲームは `scripts/fetch-wikipedia-games.mjs` の `GAMES` に並べた作品の記事から、キャラと声優の対応を読む。
 アニメのあとに実行すること（アニメ版の同じキャラにまとめ、声優も名前でアニメ側に寄せる）。
+ゲームキャラの画像は `scripts/fetch-anilist-game-images.mjs` が、AniList に載っている関連作品（アンソロジーコミック・PV・
+短編アニメなど）のキャラから、名前が一致する人物を探して付ける。名前の一部だけが合うときは声優も一致したときだけ使い、
+「〔オルタ〕」などの別の姿には元の姿の画像を使わない。アニメ側にすでにいる人物（「Fate/Zero」のイスカンダルなど）は、
+そのキャラにまとめる。ゲームの取り込みのあとに実行すること。
 `--refresh` を付けないと、前回の応答（`scripts/.cache/`）を使い回す。途中で止まった取得の続きには付けずに実行する。
 画像を載せる範囲はビルド時に選べる（`cargo run --release -p cverse-cli -- build data/source --out web/public/data --images licensed`。
 `all` が既定、`licensed` は再利用できるライセンス（パブリックドメイン、CC0、クレジット付きの CC BY / CC BY-SA）の画像だけ、`none` は画像なし）。
@@ -99,8 +104,8 @@ GitHub Actions、Cloudflare Pages へのデプロイ設定。
   `licensed` で残るのは、パブリックドメイン・CC0 と、作者名か掲載元ページのある CC BY / CC BY-SA だけ（非営利限定や改変禁止は含めない）
 - `data/sample/images/` は自動生成した仮の絵（CC0）。実在の人物・作品の画像ではない
 - `data/sample/` は動作確認用の手書きデータで、お気に入り数・人気は仮の値
-- `data/source/` は実データ（声優 2,458 人、キャラ 33,252 人、アニメ 4,223 作品とゲーム 9 本。シーズン違いと劇場版は 1 作品にまとめてある）。
-  アニメは AniList、ゲームは日本語版 Wikipedia（CC BY-SA 4.0）から取った。ゲームのキャラには画像が無い。アニメの画像は AniList の URL を
+- `data/source/` は実データ（声優 2,458 人、キャラ 33,228 人、アニメ 4,223 作品とゲーム 9 本。シーズン違いと劇場版は 1 作品にまとめてある）。
+  アニメは AniList、ゲームは日本語版 Wikipedia（CC BY-SA 4.0）から取った。ゲームのキャラは 1,239 人中 577 人に AniList の画像がある（残りは画像なし）。アニメの画像は AniList の URL を
   直接参照していて、再利用のライセンスは無い（`license: null`）。`--images licensed` でビルドすると、これらの画像は載らない
 - 読み（ひらがな）は AniList に無いので、ローマ字表記から機械的に起こしている。「しんいち」が「しにち」になるなど
   一部は正しくない（検索は名前そのものでも当たる）

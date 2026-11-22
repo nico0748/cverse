@@ -23,6 +23,7 @@ data/source/
 
 - 文字列で、全ファイルを通して一意。種別プレフィックスを必ず付ける: `va:` / `ch:` / `wk:`
 - 推奨: AniList 由来は `va:al-95185` `ch:al-40882` `wk:al-16498`、Wikipedia 由来は `wk:wp-genshin`（ゲーム）、`ch:wp-<ハッシュ>`、`va:wp-<ハッシュ>`（AniList に同じ名前の声優がいないとき）
+- Wikipedia 由来のキャラ（`ch:wp-`）にも、AniList で同じ人物が見つかれば `anilistId` と画像を付ける。アニメ側にすでにいる人物なら `ch:al-` のキャラにまとめる
 - 名寄せで統合した場合は AniList 側の ID を優先して残す
 - ID は更新をまたいで安定させる（URL・お気に入りに使う）
 
