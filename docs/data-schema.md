@@ -119,6 +119,7 @@ VoiceActor / Character / Work は、画像を 1 枚持てる（Work はキービ
 | id | string | ✓ | `wk:` で始まる |
 | title | string | ✓ | 日本語タイトル |
 | reading | string | 推奨 | 読み。ひらがな検索に使う |
+| readingGuessed | boolean | | `true` なら reading は辞書による推定（scripts/guess_readings.py）。固有名詞は外れることがある |
 | titleEn | string | | ローマ字/英語 |
 | format | string | ✓ | `TV` `TV_SHORT` `MOVIE` `OVA` `ONA` `SPECIAL` `GAME` |
 | year | number | 推奨 | 開始年 |
