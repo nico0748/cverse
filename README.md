@@ -44,7 +44,8 @@ npm run dev      # http://localhost:5173
 
 ```sh
 node scripts/fetch-anilist.mjs --works 300 --cast-pages 2 --va-pages 1 --refresh   # アニメ（AniList）
-node scripts/fix-anilist-home-works.mjs                                             # 端役だけのキャラを本来の作品につなぐ（AniList）
+node scripts/fix-anilist-home-works.mjs                                             # 抜けた主役を足し、端役だけのキャラを本来の作品につなぐ（AniList）
+node scripts/check-main-cast.mjs                                                    # 主役が抜けた作品が残っていないか確かめる（抜けがあれば終了コード 1）
 node scripts/fetch-wikipedia-games.mjs                                              # 主要ゲーム（日本語版 Wikipedia）
 node scripts/fetch-wikidata-images.mjs                                              # ゲームと Wikipedia 由来の声優の画像（Wikidata / Commons）
 node scripts/fetch-anilist-game-images.mjs                                          # ゲームキャラの画像（AniList）
@@ -61,6 +62,10 @@ AniList は 2 秒おきに呼ぶので、声優ごとの出演作まで取ると
 収集済みの声優が演じている本来の作品への登場を足す（例: エロマンガ先生のカメオにだけつながっていた五更瑠璃を俺の妹がこんなに可愛いわけがないへ）。
 人気上位に入らない作品は声優の出演作から足すので、主役でも登場が抜けることがあるため。あわせて、声の無い登場と、
 別の作品で主役・脇役のキャラがシリーズでつながらない作品に端役で出る登場（ゲスト出演）を外す（`--keep-cameos` で残す）。
+その前に、全作品の配役 1 ページ目（主役が先）を取り、まだ収集していない主役（MAIN）と、お気に入りが `--supporting-favourites`
+（既定 100）以上の脇役を足す（例: 魔都精兵のスレイブの羽前京香）。主役の声優をまだ収集していなければその声優も足す
+（`--fixed-voice-actors` で声優を増やさない）。`scripts/check-main-cast.mjs` は同じ配役の一覧（キャッシュを使い回す）と収集データを
+照らし、AniList で声の付いた主役が、収集データでその作品の主役として登場していなければ作品ごとに並べる。
 お気に入りが `--min-favourites`（既定 1）未満のキャラは照合しない。1,300 人ほどで 50 分ほどかかる。
 ゲームは `scripts/fetch-wikipedia-games.mjs` の `GAMES` に並べた作品の記事から、キャラと声優の対応を読む。
 アニメのあとに実行すること（アニメ版の同じキャラにまとめ、声優も名前でアニメ側に寄せる）。
