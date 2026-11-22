@@ -40,11 +40,12 @@ npm run dev      # http://localhost:5173
 ```
 
 小さなサンプルで動かすときは `CVERSE_DATA=sample npm run data`。
-実データを取り直す・広げるときは、リポジトリの直下で次の 4 つを順に実行する。
+実データを取り直す・広げるときは、リポジトリの直下で次の 5 つを順に実行する。
 
 ```sh
 node scripts/fetch-anilist.mjs --works 300 --cast-pages 2 --va-pages 1 --refresh   # アニメ（AniList）
 node scripts/fetch-wikipedia-games.mjs                                              # 主要ゲーム（日本語版 Wikipedia）
+node scripts/fetch-wikidata-images.mjs                                              # ゲームと Wikipedia 由来の声優の画像（Wikidata / Commons）
 node scripts/fetch-anilist-game-images.mjs                                          # ゲームキャラの画像（AniList）
 node scripts/fetch-bangumi-game-images.mjs                                          # 残りのゲームキャラの画像（Bangumi）
 ```
@@ -54,6 +55,9 @@ AniList は 2 秒おきに呼ぶので、声優ごとの出演作まで取ると
 人気順に何ページ（1 ページ 25 作品）足すか。声優は増やさず、その声優のキャラだけを足す。
 ゲームは `scripts/fetch-wikipedia-games.mjs` の `GAMES` に並べた作品の記事から、キャラと声優の対応を読む。
 アニメのあとに実行すること（アニメ版の同じキャラにまとめ、声優も名前でアニメ側に寄せる）。
+Wikipedia 由来の作品と声優には画像が無いので、`scripts/fetch-wikidata-images.mjs` が Wikidata のロゴ（P154）・画像（P18）から、
+Commons で再利用できるライセンスのものだけを足す。対象は ID が `:wp-` で画像の無い行だけで、それ以外の行には触らない。
+足した画像は、ゲームのスクリプトを実行し直しても同じ ID の行に引き継がれる。横長のロゴは切り抜かず、白い台紙に収めて表示する。
 ゲームキャラの画像は `scripts/fetch-anilist-game-images.mjs` が、AniList に載っている関連作品（アンソロジーコミック・PV・
 短編アニメなど）のキャラから、名前が一致する人物を探して付ける。名前の一部だけが合うときは声優も一致したときだけ使い、
 「〔オルタ〕」「丹恒・飲月」などの別の姿には元の姿の画像を使わない。キャラの ID は変えない（公開済みの ID は URL と

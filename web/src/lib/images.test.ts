@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { expandImages, resolveImage } from "./images";
 import { safeHref } from "./shard";
-import { TIERS, capFor, coverCrop, tierFor } from "./sprites";
+import { TIERS, capFor, coverCrop, isWide, tierFor } from "./sprites";
 
 describe("画像の URL", () => {
   it("外部の画像はそのまま、同梱の画像はデータの置き場所から解決する", () => {
@@ -72,5 +72,15 @@ describe("絵の細かさの段", () => {
     // AniList のキャラ画像（230×345）を正方形に切ると高さ 230。256 の段まで（実際の絵は 230px）。
     expect(capFor(230)).toBe(256);
     expect(capFor(100)).toBe(128);
+  });
+});
+
+describe("横長の画像（ロゴ）", () => {
+  it("枠の 2 倍より横長なら切り抜かずに収める。カバーや写真は当たらない", () => {
+    expect(isWide(320, 99, 3 / 4)).toBe(true); // ワードマーク
+    expect(isWide(230, 325, 3 / 4)).toBe(false); // AniList のカバー
+    expect(isWide(400, 300, 1)).toBe(false); // 4:3 の写真
+    expect(isWide(600, 300, 3 / 4)).toBe(true);
+    expect(isWide(100, 0, 1)).toBe(false);
   });
 });

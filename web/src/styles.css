@@ -587,6 +587,19 @@ kbd {
   object-position: 50% 30%;
 }
 
+/* ロゴのような横長の画像: 切り抜かず、白い台紙の上に収める（lib/sprites の WIDE_PADDING と同じ余白） */
+.thumb--wide {
+  background: #fff;
+}
+
+.thumb--wide img,
+.thumb--portrait.thumb--wide img {
+  object-fit: contain;
+  object-position: 50% 50%;
+  padding: 0 8%;
+  box-sizing: border-box;
+}
+
 /* 詳細の見出し: 名鑑の写真のように縦長の枠で見せる */
 .thumb--portrait {
   border-radius: 8px;
