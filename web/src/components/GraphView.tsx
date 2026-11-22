@@ -23,7 +23,8 @@ interface Props {
 const DURATION = 480;
 const LONG_PRESS = 450;
 const FONT_UI = '"BIZ UDPGothic", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", "Noto Sans JP", system-ui, sans-serif';
-const FONT_DISPLAY = '"Shippori Mincho B1", "Hiragino Mincho ProN", "Yu Mincho", serif';
+// 名前と頭文字は見出しの書体の 700。無い字は本文のゴシックで出す（styles.css の --font-display と揃える）。
+const FONT_DISPLAY = `"M PLUS 1", ${FONT_UI}`;
 
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
