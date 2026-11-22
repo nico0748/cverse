@@ -5,9 +5,11 @@
  *   node scripts/fetch-anilist.mjs [--works 300] [--cast-pages 2] [--out data/source]
  *
  * - 人気順にアニメを取り、作品ごとにキャラと日本語版の声優を集める。`--works` はまとめた後の作品数
- * - 同じ作品のシーズン違い（続編・前作でつながるテレビ・配信シリーズと、その間の OVA・特別編）は
- *   1 つの作品にまとめる。劇場版は単独の作品として残し、まとめた作品とシリーズの線でつなぐ
+ * - 同じ作品のシーズン違いと劇場版・OVA・特別編（続編・前作の関係でつながるもの）は 1 つの作品にまとめる。
+ *   外伝・スピンオフなど続編でない関係は、別の作品のままシリーズの線でつなぐ
  * - キャラは 1 作品あたり 25 人 × `--cast-pages` ページまで（主役が先、次に人気順）
+ * - そのあと、集まった声優はそのままに、各声優が演じたアニメキャラを人気の作品順に 25 作品 × `--va-pages` ページ
+ *   ぶん足す（声優は増やさない。0 で省略）
  * - AniList の API は 1 分あたりの回数に上限があるので、間隔を空け、上限に当たったら待ってやり直す
  * - 取得した応答は scripts/.cache/ に置き、途中で止まってもやり直せる。新しい内容に取り直すときは `--refresh`
  * - 画像は URL だけを記録する（サイトは保存せず直接参照する）。AniList の画像は各権利者のもので、
@@ -27,11 +29,12 @@ const option = (name, fallback) => {
 };
 const WORKS = Number(option("--works", 300));
 const CAST_PAGES = Number(option("--cast-pages", 2));
+const VA_PAGES = Number(option("--va-pages", 1));
 const OUT = option("--out", join(here, "..", "data", "source"));
 // 数でない値を渡されたまま進むと、何も取得せずに空のデータで上書きしてしまう。
-for (const [name, value] of [["--works", WORKS], ["--cast-pages", CAST_PAGES]]) {
-  if (!Number.isSafeInteger(value) || value < 1) {
-    console.error(`${name} には 1 以上の整数を指定してください`);
+for (const [name, value, min] of [["--works", WORKS, 1], ["--cast-pages", CAST_PAGES, 1], ["--va-pages", VA_PAGES, 0]]) {
+  if (!Number.isSafeInteger(value) || value < min) {
+    console.error(`${name} には ${min} 以上の整数を指定してください`);
     process.exit(1);
   }
 }
@@ -58,6 +61,25 @@ const LIST_QUERY = `query ($page: Int) {
       coverImage { large }
       relations { edges { relationType node { id type } } }
       characters(page: 1, perPage: 25, sort: [ROLE, FAVOURITES_DESC]) {${CHARACTERS}
+      }
+    }
+  }
+}`;
+
+const MEDIA = `id type format popularity siteUrl isAdult countryOfOrigin
+      title { native romaji english }
+      startDate { year }
+      coverImage { large }
+      relations { edges { relationType node { id type } } }`;
+
+const STAFF_QUERY = `query ($id: Int, $page: Int) {
+  Staff(id: $id) {
+    characterMedia(page: $page, perPage: 25, sort: POPULARITY_DESC) {
+      pageInfo { hasNextPage }
+      edges {
+        characterRole
+        node { ${MEDIA} }
+        characters { id name { native full first last alternative } image { large } favourites siteUrl }
       }
     }
   }
@@ -122,11 +144,8 @@ async function call(query, variables) {
 
 const FORMATS = new Set(["TV", "TV_SHORT", "MOVIE", "OVA", "ONA", "SPECIAL"]);
 const RELATIONS = new Set(["SEQUEL", "PREQUEL", "SIDE_STORY", "SPIN_OFF", "ALTERNATIVE"]);
-/**
- * シーズンとしてまとめる形態。続編の関係でつながる OVA・特別編（「完結編」など）も本編の続きなので含める。
- * 劇場版は単独で知られた作品が多いので別に残す。
- */
-const SEASONAL = new Set(["TV", "TV_SHORT", "ONA", "OVA", "SPECIAL"]);
+/** 1 つのシリーズにまとめる形態。続編・前作でつながる劇場版・OVA・特別編も本編と同じ作品として扱う。 */
+const SEASONAL = new Set(["TV", "TV_SHORT", "ONA", "OVA", "SPECIAL", "MOVIE"]);
 /** シーズンのつながりとみなす関係。 */
 const CHAIN = new Set(["SEQUEL", "PREQUEL"]);
 const ROLE_RANK = { MAIN: 3, SUPPORTING: 2, BACKGROUND: 1 };
@@ -249,6 +268,36 @@ function commonTitle(titles) {
   return whole ? head : "";
 }
 
+/** AniList の作品を 1 本登録する（すでにあればそれを返す）。対象外の形態やタイトルの無いものは null。 */
+function addWork(m) {
+  const id = `wk:al-${m.id}`;
+  if (works.has(id)) return works.get(id);
+  if (!FORMATS.has(m.format)) return null;
+  const title = clean(m.title.native) || clean(m.title.romaji);
+  if (!title) return null;
+  const work = {
+    id,
+    title,
+    reading: toHiragana(clean(m.title.romaji)) || undefined,
+    titleEn: clean(m.title.english) || clean(m.title.romaji) || undefined,
+    romaji: clean(m.title.romaji) || undefined,
+    format: m.format,
+    year: m.startDate?.year ?? undefined,
+    anilistId: m.id,
+    popularity: m.popularity ?? 0,
+    image: image(m.coverImage?.large, m.siteUrl),
+    sources: source(m.siteUrl),
+  };
+  works.set(id, work);
+  for (const r of m.relations?.edges ?? []) {
+    if (r.node?.type !== "ANIME") continue;
+    const to = `wk:al-${r.node.id}`;
+    if (RELATIONS.has(r.relationType)) relations.push({ from: id, to, relation: r.relationType });
+    if (CHAIN.has(r.relationType)) union(id, to);
+  }
+  return work;
+}
+
 console.log(`人気順に、まとめた後で ${WORKS} 本になるまで作品を取得します`);
 const pending = [];
 for (let page = 1; groupCount() < WORKS; page++) {
@@ -256,30 +305,10 @@ for (let page = 1; groupCount() < WORKS; page++) {
   for (const m of data.Page.media) {
     if (groupCount() >= WORKS) break;
     if (!FORMATS.has(m.format)) continue;
-    const title = clean(m.title.native) || clean(m.title.romaji);
-    if (!title) continue;
-    const work = {
-      id: `wk:al-${m.id}`,
-      title,
-      reading: toHiragana(clean(m.title.romaji)) || undefined,
-      titleEn: clean(m.title.english) || clean(m.title.romaji) || undefined,
-      romaji: clean(m.title.romaji) || undefined,
-      format: m.format,
-      year: m.startDate?.year ?? undefined,
-      anilistId: m.id,
-      popularity: m.popularity ?? 0,
-      image: image(m.coverImage?.large, m.siteUrl),
-      sources: source(m.siteUrl),
-    };
-    works.set(work.id, work);
+    const work = addWork(m);
+    if (!work) continue;
     addCast(work, m.characters?.edges);
     if (m.characters?.pageInfo?.hasNextPage) pending.push({ work, id: m.id });
-    for (const r of m.relations?.edges ?? []) {
-      if (r.node?.type !== "ANIME") continue;
-      const to = `wk:al-${r.node.id}`;
-      if (RELATIONS.has(r.relationType)) relations.push({ from: work.id, to, relation: r.relationType });
-      if (CHAIN.has(r.relationType)) union(work.id, to);
-    }
   }
   console.log(`  作品 ${groupCount()} / ${WORKS}（シーズンをまとめる前は ${works.size}）`);
   if (!data.Page.pageInfo.hasNextPage) break;
@@ -294,6 +323,30 @@ for (const { work, id } of pending) {
     if (!data.Media?.characters?.pageInfo?.hasNextPage) break;
   }
   if (++done % 25 === 0) console.log(`  ${done} / ${pending.length}`);
+}
+
+// 声優はそのままに、各声優が演じたほかのアニメキャラを足す。新しい作品には、その声優のキャラだけが入る。
+const fixed = [...voiceActors.values()];
+if (VA_PAGES > 0) console.log(`声優ごとの出演作を取得します（${fixed.length} 人、最大 ${VA_PAGES} ページ）`);
+const before = characters.size;
+done = 0;
+for (const va of VA_PAGES > 0 ? fixed : []) {
+  for (let page = 1; page <= VA_PAGES; page++) {
+    const data = await call(STAFF_QUERY, { id: va.anilistId, page });
+    const media = data.Staff?.characterMedia;
+    for (const edge of media?.edges ?? []) {
+      const m = edge.node;
+      if (!m || m.type !== "ANIME" || m.isAdult || m.countryOfOrigin !== "JP") continue;
+      const work = addWork(m);
+      if (!work) continue;
+      addCast(
+        work,
+        (edge.characters ?? []).map((node) => ({ role: edge.characterRole, node, voiceActors: [{ id: va.anilistId }] })),
+      );
+    }
+    if (!media?.pageInfo?.hasNextPage) break;
+  }
+  if (++done % 100 === 0) console.log(`  ${done} / ${fixed.length}（キャラ +${characters.size - before}）`);
 }
 
 // シーズンをまとめる。代表は一番早い（同じ年なら AniList の ID が小さい）シーズン。
