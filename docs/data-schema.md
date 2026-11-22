@@ -22,7 +22,7 @@ data/source/
 ## ID
 
 - 文字列で、全ファイルを通して一意。種別プレフィックスを必ず付ける: `va:` / `ch:` / `wk:`
-- 推奨: AniList 由来は `va:al-95185` `ch:al-40882` `wk:al-16498`、Wikipedia 由来は `wk:wp-<記事名>` など
+- 推奨: AniList 由来は `va:al-95185` `ch:al-40882` `wk:al-16498`、Wikipedia 由来は `wk:wp-genshin`（ゲーム）、`ch:wp-<ハッシュ>`、`va:wp-<ハッシュ>`（AniList に同じ名前の声優がいないとき）
 - 名寄せで統合した場合は AniList 側の ID を優先して残す
 - ID は更新をまたいで安定させる（URL・お気に入りに使う）
 
@@ -122,15 +122,15 @@ VoiceActor / Character / Work は、画像を 1 枚持てる（Work はキービ
 | format | string | ✓ | `TV` `TV_SHORT` `MOVIE` `OVA` `ONA` `SPECIAL` `GAME` |
 | year | number | 推奨 | 開始年 |
 | series | string | | シリーズ名（例: 「Fate」） |
-| parts | string[] | | 1 つにまとめたシーズンのタイトル（例: 「僕のヒーローアカデミア 6」）。検索にも使う |
+| parts | string[] | | 1 つにまとめたシーズン・劇場版のタイトル（例: 「僕のヒーローアカデミア 6」）。検索にも使う |
 | anilistId | number | | |
 | wikipediaTitle | string | | |
 | popularity | number | | AniList popularity など。大量ノード時の優先度に使う |
 | image | Image | | キービジュアル・カバー |
 | sources | Source[] | ✓ | |
 
-同じ作品のシーズン違い（続編・前作でつながるテレビ・配信シリーズと、その間の OVA・特別編）は 1 件の Work にまとめ、
-各シーズンのタイトルを `parts` に入れる。劇場版は別の Work のまま残し、Series でつなぐ。
+同じ作品のシーズン違いと劇場版・OVA・特別編（続編・前作の関係でつながるもの）は 1 件の Work にまとめ、
+各タイトルを `parts` に入れる。外伝・スピンオフなど続編でない関係は別の Work のまま Series でつなぐ。
 
 ## Cast（声優–キャラ）
 
