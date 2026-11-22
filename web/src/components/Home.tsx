@@ -146,7 +146,8 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
           )}
           <p>
             データは <a href="https://anilist.co" target="_blank" rel="noreferrer">AniList</a>、{" "}
-            <a href="https://bgm.tv" target="_blank" rel="noreferrer">Bangumi</a>（ゲームキャラの画像）と{" "}
+            <a href="https://bgm.tv" target="_blank" rel="noreferrer">Bangumi</a>（ゲームキャラの画像）、{" "}
+            <a href="https://github.com/nico0748/SchaleDB" target="_blank" rel="noreferrer">SchaleDB</a>（ブルーアーカイブの生徒アイコン）と{" "}
             <a href="https://ja.wikipedia.org" target="_blank" rel="noreferrer">Wikipedia 日本語版</a>
             （<a href="https://creativecommons.org/licenses/by-sa/4.0/deed.ja" target="_blank" rel="noreferrer">CC BY-SA 4.0</a>
             ）をもとにしています。非商用で、広告はありません。{" "}
