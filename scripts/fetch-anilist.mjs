@@ -257,15 +257,19 @@ function commonTitle(titles) {
   if (list.length < 2) return titles[0] ?? "";
   let n = 0;
   while (list.every((t) => n < t.length && t[n] === list[0][n])) n++;
-  const head = list[0].slice(0, n).join("").replace(TRIM, "");
-  if (Array.from(head).length < 2) return "";
-  // 語の途中で切れていないか（どのタイトルも、頭の直後が終わりか区切り）。
-  const len = Array.from(head).length;
-  const whole = list.every((t) => {
-    const rest = t.slice(len).join("");
-    return rest === "" || SEPARATOR.test(rest[0]);
-  });
-  return whole ? head : "";
+  // 語の途中で切れていないか（どのタイトルも、頭の直後が終わりか区切り）。切れていれば、手前の区切りまで戻す。
+  // 例: 「メジャー (第1シリーズ)」「メジャー (第2シリーズ)」→「メジャー」
+  for (let len = n; len >= 2; len--) {
+    const head = list[0].slice(0, len).join("").replace(TRIM, "");
+    const size = Array.from(head).length;
+    if (size < 2) return "";
+    const whole = list.every((t) => {
+      const rest = t.slice(size).join("");
+      return rest === "" || SEPARATOR.test(rest[0]);
+    });
+    if (whole) return head;
+  }
+  return "";
 }
 
 /** AniList の作品を 1 本登録する（すでにあればそれを返す）。対象外の形態やタイトルの無いものは null。 */
@@ -424,6 +428,9 @@ for (const [chId, byWork] of voicedIn) {
 const voiced = new Set(casts.map((c) => c.character));
 for (const id of [...characters.keys()]) if (!voiced.has(id)) characters.delete(id);
 const keptAppearances = [...appearances.values()].filter((a) => characters.has(a.character));
+// 登場するキャラが 1 人もいない作品（声優の出演作で、役がナレーターだけだったものなど）は外す。
+const appearing = new Set(keptAppearances.map((a) => a.work));
+for (const id of [...works.keys()]) if (!appearing.has(id)) works.delete(id);
 // シリーズの線は、両方の作品が入っているものだけ。向きが逆の重複は 1 本にする。
 const seen = new Set();
 const series = relations.filter((r) => {

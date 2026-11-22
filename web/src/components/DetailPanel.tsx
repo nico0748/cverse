@@ -228,7 +228,9 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
     if (d.debutYear) facts.push(["活動開始", `${d.debutYear}年`]);
     if (d.roles?.length) facts.push(["収録", `${d.roles.length}役`]);
   } else if (d.kind === "ch") {
-    if (d.voicedBy?.length) facts.push(["声優", d.voicedBy.length === 1 ? d.voicedBy[0].name : `${d.voicedBy.length}人`]);
+    // アニメとゲームで同じ声優なら 1 人に数える。
+    const people = [...new Map((d.voicedBy ?? []).map((v) => [v.id, v.name])).values()];
+    if (people.length) facts.push(["声優", people.length === 1 ? people[0] : `${people.length}人`]);
     if (d.works?.length) facts.push(["登場", `${d.works.length}作品`]);
   } else {
     if (d.format) facts.push(["形態", FORMAT_LABEL[d.format] ?? d.format]);

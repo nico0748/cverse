@@ -105,14 +105,16 @@ function stripTemplates(s) {
 }
 
 /** 表示される文字だけにする（参照、テンプレート、リンク、強調、HTML を外す）。 */
+/** リンクを表示名にする（テンプレートの中のリンクも先に外す。例: {{ruby|[[胡桃 (原神)|胡桃]]|フータオ}}）。 */
+const delink = (s) => s.replace(/\[\[(?:[^\]|]*\|)?([^\]]*)\]\]/g, "$1");
+
 export function plain(s) {
   return stripTemplates(
-    s
+    delink(s)
       .replace(/<ref[^>]*\/>/g, "")
       .replace(/<ref[^>]*>[\s\S]*?<\/ref>/g, "")
       .replace(/<!--[\s\S]*?-->/g, ""),
   )
-    .replace(/\[\[(?:[^\]|]*\|)?([^\]]*)\]\]/g, "$1")
     .replace(/\[https?:\S+\s([^\]]*)\]/g, "$1")
     .replace(/<br\s*\/?>/gi, " ")
     .replace(/<[^>]+>/g, "")
@@ -126,7 +128,7 @@ const toHira = (s) => s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charC
 
 /** 見出しの名前から、名前と読みを取り出す。「七神 リン（なながみ リン）」→ 七神 リン / なながみりん */
 export function splitName(raw) {
-  const rubyReading = raw.match(/\{\{\s*(?:ruby|読み仮名|読み仮名_ruby不使用)\s*\|[^{}|]*\|([^{}|]*)\}\}/i)?.[1];
+  const rubyReading = delink(raw).match(/\{\{\s*(?:ruby|読み仮名|読み仮名_ruby不使用)\s*\|[^{}|]*\|([^{}|]*)\}\}/i)?.[1];
   let text = plain(raw);
   let reading;
   const paren = text.match(/^(.*?)\s*[（(]([^）)]*)[）)]\s*$/);
@@ -326,6 +328,9 @@ for (const game of GAMES) {
     if (existing) {
       chId = existing.id;
       merged++;
+      // 出典に Wikipedia の記事も足す（前回足した分は重ねない）。
+      const url = pageUrl(item.page);
+      existing.sources = [...(existing.sources ?? []).filter((s) => s.url !== url), { source: "wikipedia", url, fetchedAt: today }];
     } else {
       chId = `ch:wp-${hash(`${game.id}|${item.name}`)}`;
       if (!newChars.has(chId)) {
