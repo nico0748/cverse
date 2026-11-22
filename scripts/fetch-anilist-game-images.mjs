@@ -164,8 +164,12 @@ export const isForm = (name) => /[〔［\[]/.test(name ?? "");
  * `name` が `base` の別の姿か（「丹恒・飲月」と「丹恒」、「スカサハ＝スカディ」と「スカサハ」）。
  * 区切りの後ろに名前が続く形だけを見るので、「キャプテン・ネモ」と「ネモ」のような普通の名前は別の姿とみなさない。
  */
-export const isFormOf = (name, base) =>
-  Boolean(base) && name.length > base.length && name.startsWith(base) && /^[・＝=]/.test(name.slice(base.length));
+export const isFormOf = (name, base) => {
+  // 「スカサハ (Scathach)」のような括弧書きは名前ではないので、外してから比べる。
+  const strip = (s) => (s ?? "").normalize("NFKC").replace(/\s*[（(][^）)]*[）)]/g, "").trim();
+  const [n, b] = [strip(name), strip(base)];
+  return Boolean(b) && n.length > b.length && n.startsWith(b) && /^[・＝=]/.test(n.slice(b.length));
+};
 
 /**
  * ゲームのキャラ 1 人に合う AniList のキャラを選ぶ。
