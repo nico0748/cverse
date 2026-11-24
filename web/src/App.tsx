@@ -11,12 +11,14 @@ import { MyList } from "./components/MyList";
 import { PathPanel, type PathDraft } from "./components/PathPanel";
 import { SearchBox } from "./components/SearchBox";
 import { Thumb } from "./components/Thumb";
+import { TimeAttackIntro, TimeAttackPanel, Timer } from "./components/TimeAttack";
 import { engine } from "./lib/engine";
 import { useBriefs, useFocusRescue, useNarrow } from "./lib/hooks";
 import { sceneFromPath, sceneFromView, type SceneNode } from "./lib/scene";
 import { markSeen, seen, useFavorites, useHistory } from "./lib/store";
 import { useTheme } from "./lib/theme";
 import { DEFAULT_FILTER, KIND_LABEL, isDefaultFilter, type Filter, type Meta, type NodeBrief, type PathData, type ViewData } from "./lib/types";
+import { useTimeAttack } from "./lib/useTimeAttack";
 import { EMPTY_ROUTE, parseRoute, serializeRoute, type RouteState } from "./lib/url";
 
 const MAX_TRAIL = 40;
@@ -82,7 +84,7 @@ export function App() {
   // あとから呼ばれる処理（検索の結果、おまかせ など）が古い状態で動かないよう、最新の状態を持っておく。
   const live = useRef({ route, trail });
   live.current = { route, trail };
-  const tab = route.pathOpen ? "path" : "detail";
+  const tab = route.game ? "game" : route.pathOpen ? "path" : "detail";
 
   // ---- URL と履歴（F-05）: 中心ノードを URL に持たせ、ブラウザの「戻る」で前の中心へ戻る ----
   const commit = useCallback((next: RouteState, nextTrail: string[], mode: "push" | "replace", opened = false) => {
@@ -93,6 +95,32 @@ export function App() {
     setRoute(next);
     setTrail(nextTrail);
   }, []);
+
+  // ---- つながりタイムアタック ----
+  const onPair = useCallback(
+    (from: string, to: string) => commit({ ...EMPTY_ROUTE, game: { kind: "pair", from, to } }, [], "replace"),
+    [commit],
+  );
+  const ta = useTimeAttack(route.game, onPair);
+  const [taShowing, setTaShowing] = useState<"mine" | "shortest">("mine");
+  const [taNote, setTaNote] = useState("");
+  const taPhase = ta.state.phase;
+  const inGame = !!route.game;
+  const gameIntro = inGame && (taPhase === "lobby" || taPhase === "loading" || taPhase === "ready" || taPhase === "error");
+  const openLobby = useCallback(() => {
+    commit({ ...EMPTY_ROUTE, game: { kind: "lobby" } }, [], live.current.route.game ? "replace" : "push");
+    setPicking(null);
+  }, [commit]);
+  useEffect(() => {
+    setTaNote("");
+    if (taPhase === "cleared" || taPhase === "gaveup") {
+      setTaShowing(taPhase === "cleared" ? "mine" : "shortest");
+      setSheet("half");
+      setAnnouncement(taPhase === "cleared" ? "ゴールしました" : "ギブアップしました。最短の道を表示しています");
+    } else if (taPhase === "playing") {
+      setSheet("peek");
+    }
+  }, [taPhase]);
 
   const clearDraft = useCallback(() => setDraft((d) => ({ from: null, to: null, mode: d.mode })), []);
 
@@ -188,9 +216,9 @@ export function App() {
     };
   }, [route.path, route.filter]);
 
-  const atHome = !route.center && !route.pathOpen;
+  const atHome = !route.center && !route.pathOpen && !inGame;
   const heroId = heroOf(meta);
-  const wantHero = !route.center && !narrow && !!heroId;
+  const wantHero = !route.center && !inGame && !narrow && !!heroId;
   useEffect(() => {
     // トップ画面（と、中心が無いままの「つながりを調べる」）の相関図。スマホでは出さない。
     if (!wantHero || !heroId) return;
@@ -281,6 +309,17 @@ export function App() {
   };
 
   const onNodeClick = (node: SceneNode) => {
+    if (inGame) {
+      if (taPhase !== "playing") return;
+      if (node.kind === "more") {
+        // 図に描ききれない隣は、一覧から選ぶ。
+        setSheet("full");
+        requestAnimationFrame(() => document.getElementById("ta-filter")?.focus());
+        return;
+      }
+      setTaNote(ta.moveTo(node.id) ? "" : "このノードへは、今いるところから直接進めません");
+      return;
+    }
     dismissHint();
     if (picking) {
       // 「他 N 件」は端点にできない。押しても、選んでいる途中の状態を崩さない。
@@ -317,23 +356,37 @@ export function App() {
   const scene = useMemo(() => {
     // シートを半分まで開いたスマホでは図の枠が横長になるので、縦長向けの配置にしない。
     const layout = { portrait: narrow && sheet !== "half" };
+    if (inGame) {
+      const { puzzle, view, route: walked } = ta.state;
+      if (!puzzle) return null;
+      if (taPhase === "cleared" || taPhase === "gaveup") {
+        const nodes = taShowing === "mine" ? walked.map(ta.briefOf) : puzzle.shortest;
+        return sceneFromPath({ found: true, nodes, hops: nodes.length - 1, costar: 0, visited: 0, ms: 0 }, layout);
+      }
+      if (taPhase !== "playing" || !view) return null;
+      const base = sceneFromView(view, walked, layout);
+      // ゴールが図に入っていたら、ひと目でわかるよう目立たせる。
+      return { ...base, nodes: base.nodes.map((n) => (n.id === puzzle.to.id ? { ...n, emphasis: "end" as const, forceLabel: true } : n)) };
+    }
     if (route.path && pathData?.found) return sceneFromPath(pathData, layout);
     if (route.center) return shown ? sceneFromView(shown.view, shown.trail, layout) : null;
     // トップ画面（と、中心が無いままの経路画面）では日替わりの相関図を見せる。
     return heroView && !narrow ? sceneFromView(heroView, []) : null;
-  }, [route.path, route.center, pathData, shown, heroView, narrow, sheet]);
+  }, [route.path, route.center, pathData, shown, heroView, narrow, sheet, inGame, ta.state, ta.briefOf, taPhase, taShowing]);
 
   const centerBrief = route.center ? briefs.get(route.center) : undefined;
   const sameEnds = !!route.path && route.path.from === route.path.to;
   useEffect(() => {
-    document.title = route.path && pathFrom && pathTo && !sameEnds
+    document.title = inGame
+      ? "つながりタイムアタック | CVerse"
+      : route.path && pathFrom && pathTo && !sameEnds
       ? `${pathFrom.label} と ${pathTo.label} のつながり | CVerse`
       : route.pathOpen && !centerBrief
         ? "つながりを調べる | CVerse"
         : centerBrief
           ? `${centerBrief.label} の相関図 | CVerse`
           : "CVerse | 声優・キャラ・作品の相関図";
-  }, [centerBrief, route.path, route.pathOpen, pathFrom, pathTo, sameEnds]);
+  }, [centerBrief, route.path, route.pathOpen, pathFrom, pathTo, sameEnds, inGame]);
 
   // 中心が変わったら、読み上げで知らせ、詳細を先頭から見せる。押した項目が消えてフォーカスの行き場が
   // 無くなったときは、詳細パネルへ移す（キーボードで続けて辿れるように）。
@@ -379,7 +432,7 @@ export function App() {
   }
 
   const hero = heroId ? (briefs.get(heroId) ?? null) : null;
-  const sheetTitle = tab === "path" ? "つながりを調べる" : (centerBrief?.label ?? "詳細");
+  const sheetTitle = tab === "game" ? "つながりタイムアタック" : tab === "path" ? "つながりを調べる" : (centerBrief?.label ?? "詳細");
   const sheetOpen = sheet !== "peek";
   // シートのつまみ: 押すと開閉、上下に引くと 1 段ずつ動く。
   const drag = dragRef.current;
@@ -387,14 +440,14 @@ export function App() {
   const stepSheet = (by: number) => setSheet(order[Math.max(0, Math.min(order.length - 1, order.indexOf(sheet) + by))]);
   const pathHeadline = showingPath && pathData ? pathSummary(pathData, pathFrom, pathTo) : "";
   return (
-    <div className={`app${atHome ? " app--home" : ""} app--sheet-${sheet}`}>
+    <div className={`app${atHome || gameIntro ? " app--home" : ""}${inGame ? " app--game" : ""} app--sheet-${sheet}`}>
       <a
         className="skip-link"
-        href={atHome ? "#home" : "#panel"}
+        href={atHome || gameIntro ? "#home" : "#panel"}
         onClick={(e) => {
           // URL に #panel を足すと「戻る」が 1 回ぶん空振りするので、フォーカスだけ移す。
           e.preventDefault();
-          (atHome ? document.getElementById("home") : panelRef.current)?.focus();
+          (atHome || gameIntro ? document.getElementById("home") : panelRef.current)?.focus();
         }}
       >
         本文へ移動
@@ -416,7 +469,7 @@ export function App() {
           <LogoMark />
           <span className="brand__name">CVerse</span>
         </a>
-        {!atHome && (
+        {!atHome && !inGame && (
           <SearchBox
             label="声優・キャラ・作品を検索"
             placeholder={narrow ? "名前で検索" : "声優・キャラ・作品を検索"}
@@ -427,7 +480,8 @@ export function App() {
           />
         )}
         <nav className="topbar__nav" aria-label="メニュー">
-          {!atHome && (
+          {inGame && <span className="topbar__title">つながりタイムアタック</span>}
+          {!atHome && !inGame && (
             <button
               type="button"
               className={`nav-button${tab === "path" ? " is-on" : ""}`}
@@ -480,8 +534,26 @@ export function App() {
             onNavigate={navigate}
             onRandom={random}
             onPath={openPath}
+            onTimeAttack={openLobby}
             onAbout={() => setAboutOpen(true)}
           />
+        ) : gameIntro ? (
+          <TimeAttackIntro state={ta.state} onGenerate={ta.generate} onStart={ta.start} onLobby={openLobby} />
+        ) : inGame ? (
+          <>
+            {scene && <Legend />}
+            <div className="stage__notes" aria-live="polite">
+              {taPhase === "playing" && !ta.state.view && <p className="note">読み込み中…</p>}
+              {taNote && (
+                <p className="note note--accent">
+                  {taNote}
+                  <button type="button" className="link" onClick={() => setTaNote("")}>
+                    閉じる
+                  </button>
+                </p>
+              )}
+            </div>
+          </>
         ) : (
           <>
             <div className="stage__top">
@@ -548,9 +620,11 @@ export function App() {
             onNodeClick={onNodeClick}
             picking={picking !== null}
             theme={theme}
-            zoomControls={!atHome && !!scene && !(narrow && sheet === "full")}
+            zoomControls={!atHome && !gameIntro && !!scene && !(narrow && sheet === "full")}
             label={
-              showingPath
+              inGame
+                ? "つながりタイムアタックの相関図。押したノードへ進みます。進める先は一覧にもあります。"
+                : showingPath
                 ? "2 つのノードをつなぐ経路の図。内容は「つながりを調べる」の一覧にもあります。"
                 : `${(route.center ? centerBrief?.label : hero?.label) ?? ""}の相関図。${
                     route.depth > 1 ? "直接つながるノードは詳細の一覧にもあります。" : "内容は詳細の一覧にもあります。"
@@ -560,7 +634,7 @@ export function App() {
         </ErrorBoundary>
       </main>
 
-      {!atHome && (
+      {!atHome && !gameIntro && (
         <aside className="panel" id="panel" aria-label={sheetTitle} tabIndex={-1} ref={panelRef}>
           <button
             type="button"
@@ -594,7 +668,14 @@ export function App() {
           >
             <span className="panel__grip" aria-hidden="true" />
             <span className="panel__peek">
-              {tab === "detail" && centerBrief ? (
+              {tab === "game" && ta.state.puzzle ? (
+                <span className="panel__peek-text">
+                  <strong>
+                    {taPhase === "playing" ? <Timer startedAt={ta.state.startedAt} endedAt={0} /> : taPhase === "cleared" ? "ゴール！" : "ギブアップ"}
+                  </strong>
+                  <small>ゴール: {ta.state.puzzle.to.label}</small>
+                </span>
+              ) : tab === "detail" && centerBrief ? (
                 <>
                   <Thumb kind={centerBrief.kind} src={centerBrief.image} label={centerBrief.label} size={28} />
                   <span className="panel__peek-text">
@@ -613,7 +694,20 @@ export function App() {
           </button>
           <div className="panel__body" ref={bodyRef} inert={narrow && !sheetOpen}>
             <ErrorBoundary name={tab === "path" ? "つながり" : "詳細"} resetKey={`${tab}:${route.center}`}>
-              {tab === "path" ? (
+              {tab === "game" ? (
+                <TimeAttackPanel
+                  state={ta.state}
+                  briefOf={ta.briefOf}
+                  onStep={ta.step}
+                  onBack={ta.back}
+                  onGiveUp={ta.giveUp}
+                  onRetry={ta.retry}
+                  onLobby={openLobby}
+                  showing={taShowing}
+                  onShowing={setTaShowing}
+                  shareUrl={ta.state.puzzle ? `${location.origin}${location.pathname}?ta=${ta.state.puzzle.from.id}~${ta.state.puzzle.to.id}` : location.href}
+                />
+              ) : tab === "path" ? (
                 <PathPanel
                   draft={draft}
                   onDraft={updateDraft}
