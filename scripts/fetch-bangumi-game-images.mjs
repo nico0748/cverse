@@ -9,6 +9,7 @@
  * - 同じ人物とみなすのは、名前（Bangumi の表示名と、詳細の「日文名」「别名」など）が正規化して一致するとき。
  *   名前の一部だけが合うときは、日本語の声優も一致したときだけ。「〔オルタ〕」などの別の姿は含むだけでは合わせない
  * - 画像のないキャラだけが対象（fetch-anilist-game-images.mjs のあとに実行する）。前回このスクリプトが付けた画像は付け直す
+ * - 画像（Wikimedia Commons のロゴなど）が無いゲーム作品には、Bangumi の作品カバーを付ける。前回付けたカバーは付け直す
  * - 応答は scripts/.cache/ に置いて使い回す。取り直すときは `--refresh`
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -156,7 +157,10 @@ export function pick(name, vas, candidates) {
 
 async function main() {
   const readJson = async (name) => JSON.parse(await readFile(join(OUT, name), "utf8"));
-  const [characters, casts, voiceActors] = await Promise.all(["characters.json", "casts.json", "voice_actors.json"].map(readJson));
+  const [characters, casts, voiceActors, works] = await Promise.all(
+    ["characters.json", "casts.json", "voice_actors.json", "works.json"].map(readJson),
+  );
+  await addGameCovers(works);
   const byId = new Map(characters.map((c) => [c.id, c]));
   const vaName = new Map(voiceActors.map((v) => [v.id, norm(v.name)]));
 
@@ -215,6 +219,33 @@ async function main() {
   await writeFile(join(OUT, "characters.json"), `[\n${characters.map((item) => JSON.stringify(item)).join(",\n")}\n]\n`);
   if (loose.length) console.log(`名前の一部と声優で合わせたもの ${loose.length} 件:\n  ${loose.join("\n  ")}`);
   console.log(`画像を付けた: ${added} / ${total}（画像のなかったゲームキャラ）→ ${OUT}`);
+}
+
+/** 画像の無いゲーム作品（と前回 Bangumi のカバーを付けた作品）に、Bangumi の作品カバーを付けて works.json に書き戻す。 */
+async function addGameCovers(works) {
+  const byId = new Map(works.map((w) => [w.id, w]));
+  const missing = [];
+  let hit = 0;
+  console.log("ゲームの作品画像（Bangumi のカバー）:");
+  for (const game of GAMES) {
+    const work = byId.get(game.id);
+    if (!work || (work.image && work.image.source !== "bangumi")) continue;
+    const subject = await get(`/v0/subjects/${game.subject}`);
+    const url = subject?.images?.common || subject?.images?.large;
+    work.sources = (work.sources ?? []).filter((s) => s.source !== "bangumi");
+    if (!url) {
+      delete work.image;
+      missing.push(work.title);
+      continue;
+    }
+    const pageUrl = `https://bgm.tv/subject/${game.subject}`;
+    work.image = { url, source: "bangumi", pageUrl, license: null, attribution: null };
+    work.sources.push({ source: "bangumi", url: pageUrl, fetchedAt: today });
+    hit++;
+    console.log(`  ${game.id}: ${work.title}`);
+  }
+  await writeFile(join(OUT, "works.json"), `[\n${works.map((item) => JSON.stringify(item)).join(",\n")}\n]\n`);
+  console.log(`作品画像を付けた: ${hit} 本${missing.length ? `（見つからなかった: ${missing.join("、")}）` : ""}`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await main();

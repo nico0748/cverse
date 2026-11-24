@@ -12,6 +12,7 @@ import {
   type Meta,
   type WorkRef,
 } from "../lib/types";
+import { timelineYears, type Role } from "../lib/timeline";
 import { Icon } from "./Icon";
 import { KindIcon } from "./KindIcon";
 import { Thumb } from "./Thumb";
@@ -100,6 +101,8 @@ function ListSection<T>({
   children,
   empty,
   className = "rows",
+  toggle,
+  showCount = true,
 }: {
   title: string;
   items: T[];
@@ -108,6 +111,10 @@ function ListSection<T>({
   children: (item: T, index: number) => ReactNode;
   empty?: string;
   className?: string;
+  /** 見出しの横に置く切り替え（声優ページのキャラ順／年表）。 */
+  toggle?: ReactNode;
+  /** 件数の札を出すか。収集した分だけなので、出演やキャストの全部と取り違えやすい一覧では出さない。 */
+  showCount?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
@@ -119,13 +126,15 @@ function ListSection<T>({
       <div className="section-head">
         <h2>
           {title}
-          {items.length > 0 && (
+          {showCount && items.length > 0 && (
             <span className="count" aria-label={`${items.length} 件`}>
               {items.length}
             </span>
           )}
         </h2>
-        {items.length > 12 && (
+        <div className="section-head__tools">
+          {toggle}
+          {items.length > 12 && (
           <input
             className="mini-filter"
             type="search"
@@ -137,7 +146,8 @@ function ListSection<T>({
               setLimit(PAGE);
             }}
           />
-        )}
+          )}
+        </div>
       </div>
       {items.length === 0 && <p className="empty">{empty ?? "データがありません。"}</p>}
       {items.length > 0 && filtered.length === 0 && <p className="empty">「{query.trim()}」を含むものはありません。</p>}
@@ -145,6 +155,105 @@ function ListSection<T>({
       {filtered.length > limit && (
         <button type="button" className="more-button" onClick={() => setLimit(limit + PAGE * 2)}>
           残り{filtered.length - limit}件を表示
+        </button>
+      )}
+    </section>
+  );
+}
+
+type RoleView = "list" | "timeline";
+/** 声優ページの並べ方。ほかの声優へ移っても同じ並べ方のままにする。 */
+let lastRoleView: RoleView = "list";
+
+type Go = (ref: { id: string; name: string }, kind: Kind, note?: string, opts?: { right?: boolean }) => ReactNode;
+/** 年表で最初に出す年の数。 */
+const YEARS_PAGE = 8;
+
+/** 声優の出演年表。上の帯で年ごとの出演作の多さを見せ、押すとその年へ移る。 */
+function Timeline({ roles, go, toggle }: { roles: Role[]; go: Go; toggle: ReactNode }) {
+  const years = useMemo(() => timelineYears(roles), [roles]);
+  const [limit, setLimit] = useState(YEARS_PAGE);
+  const dated = years.filter((y) => y.year != null) as { year: number; rows: { role: Role; work: WorkRef }[] }[];
+  if (!years.length) {
+    return (
+      <section>
+        <div className="section-head">
+          <h2>出演年表</h2>
+          {toggle}
+        </div>
+        <p className="empty">出演の記録がありません。</p>
+      </section>
+    );
+  }
+  // 帯は最初の年から最後の年まで、出演の無い年も空けて並べる。
+  const first = dated.length ? dated[dated.length - 1].year : 0;
+  const last = dated.length ? dated[0].year : 0;
+  const perYear = new Map(dated.map((y) => [y.year, y.rows]));
+  const works = (rows: { work: WorkRef }[]) => new Set(rows.map((r) => r.work.id)).size;
+  const peak = Math.max(1, ...dated.map((y) => works(y.rows)));
+  const jump = (year: number) => {
+    const at = years.findIndex((y) => y.year === year);
+    if (at >= limit) setLimit(at + 1);
+    requestAnimationFrame(() => document.getElementById(`tl-${year}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+  const shown = years.slice(0, limit);
+  return (
+    <section className="timeline">
+      <div className="section-head">
+        <h2>
+          出演年表
+          {dated.length > 0 && <span className="timeline__span">{first === last ? `${first}年` : `${first}〜${last}年`}</span>}
+        </h2>
+        {toggle}
+      </div>
+      {dated.length > 1 && (
+        <div className="timeline__bars" role="group" aria-label="年ごとの出演作">
+          {Array.from({ length: last - first + 1 }, (_, i) => first + i).map((year) => {
+            const rows = perYear.get(year);
+            const n = rows ? works(rows) : 0;
+            const main = rows?.some((r) => r.work.role === "MAIN");
+            return n ? (
+              <button
+                key={year}
+                type="button"
+                className={`timeline__bar${main ? " is-main" : ""}`}
+                style={{ height: `${Math.max(14, (n / peak) * 100)}%` }}
+                title={`${year}年`}
+                aria-label={`${year}年へ移る`}
+                onClick={() => jump(year)}
+              />
+            ) : (
+              <span key={year} className="timeline__bar timeline__bar--empty" aria-hidden="true" />
+            );
+          })}
+        </div>
+      )}
+      {dated.length > 1 && (
+        <p className="timeline__legend muted">
+          <span className="timeline__key is-main" aria-hidden="true" />
+          メインキャラのある年
+        </p>
+      )}
+      {dated.length > 0 && (
+        <p className="timeline__note muted">作品の開始年で並べています。シーズンや劇場版をまとめた作品は、最初の作品の年に入ります。</p>
+      )}
+      {shown.map(({ year, rows }) => (
+        <div className="timeline__year" key={year ?? "unknown"} id={year != null ? `tl-${year}` : undefined}>
+          <h3 className="timeline__label">{year != null ? `${year}年` : "年の記録なし"}</h3>
+          <ul className="cast">
+            {rows.map(({ role, work }) => (
+              <li key={`${role.id}-${work.id}`}>
+                {go(role, "ch", [role.kind && (KIND_NOTE[role.kind] ?? role.kind), work.role && ROLE_LABEL[work.role]].filter(Boolean).join("・"))}
+                <span className="cast__dots" aria-hidden="true" />
+                {go(work, "wk", work.format && (FORMAT_LABEL[work.format] ?? work.format), { right: true })}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {years.length > limit && (
+        <button type="button" className="more-button" onClick={() => setLimit(limit + YEARS_PAGE * 2)}>
+          さらに前の年を表示
         </button>
       )}
     </section>
@@ -179,6 +288,11 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
   const [state, setState] = useState<"loading" | "ready" | "missing" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
   const [shared, setShared] = useState(false);
+  const [roleView, setRoleView] = useState<RoleView>(lastRoleView);
+  const chooseRoleView = (view: RoleView) => {
+    lastRoleView = view;
+    setRoleView(view);
+  };
 
   useEffect(() => {
     let stale = false;
@@ -228,7 +342,6 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
   if (d.kind === "va") {
     if (d.agency) facts.push(["所属", d.agency]);
     if (d.debutYear) facts.push(["活動開始", `${d.debutYear}年`]);
-    if (d.roles?.length) facts.push(["収録", `${d.roles.length}役`]);
   } else if (d.kind === "ch") {
     // アニメとゲームで同じ声優なら 1 人に数える。
     const people = [...new Map((d.voicedBy ?? []).map((v) => [v.id, v.name])).values()];
@@ -239,7 +352,6 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
     if (d.year) facts.push(["開始", `${d.year}年`]);
     if (d.series && d.series !== d.name) facts.push(["シリーズ", d.series]);
     if (d.parts && d.parts.length > 1) facts.push(["シーズン", `${d.parts.length}作をまとめて表示（${d.parts.join("、")}）`]);
-    if (d.cast?.length) facts.push(["収録", `キャスト${d.cast.length}人`]);
   }
   if (d.aliases?.length) facts.push(["別名", d.aliases.join("、")]);
   const hasWikipedia = d.sources?.some((s) => s.source === "wikipedia");
@@ -253,6 +365,17 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
         {note && <small>{note}</small>}
       </span>
     </button>
+  );
+
+  const roleToggle = (
+    <div className="segmented view-toggle" role="group" aria-label="出演の並べ方">
+      <button type="button" className={`seg${roleView === "list" ? " is-on" : ""}`} aria-pressed={roleView === "list"} onClick={() => chooseRoleView("list")}>
+        キャラ順
+      </button>
+      <button type="button" className={`seg${roleView === "timeline" ? " is-on" : ""}`} aria-pressed={roleView === "timeline"} onClick={() => chooseRoleView("timeline")}>
+        年表
+      </button>
+    </div>
   );
 
   const share = async () => {
@@ -319,25 +442,33 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
       )}
 
       {d.kind === "va" && (
-        <ListSection
-          title="演じたキャラ"
-          items={d.roles ?? []}
-          text={(r) => `${r.name} ${(r.works ?? []).map((w) => w.name).join(" ")}`}
-          className="cast"
-          empty="出演の記録がありません。"
-        >
-          {(r) => {
-            const work = r.works?.[0];
-            const rest = (r.works?.length ?? 0) - 1;
-            return (
-              <li key={r.id}>
-                {go(r, "ch", [r.kind && (KIND_NOTE[r.kind] ?? r.kind), work?.role && ROLE_LABEL[work.role]].filter(Boolean).join("・"))}
-                <span className="cast__dots" aria-hidden="true" />
-                {work && go(work, "wk", [workMeta(work), rest > 0 && `ほか${rest}作品`].filter(Boolean).join("・"), { right: true })}
-              </li>
-            );
-          }}
-        </ListSection>
+        <>
+          {roleView === "timeline" ? (
+            <Timeline key={d.id} roles={d.roles ?? []} go={go} toggle={roleToggle} />
+          ) : (
+            <ListSection
+              title="演じたキャラ"
+              toggle={roleToggle}
+              showCount={false}
+              items={d.roles ?? []}
+              text={(r) => `${r.name} ${(r.works ?? []).map((w) => w.name).join(" ")}`}
+              className="cast"
+              empty="出演の記録がありません。"
+            >
+              {(r) => {
+                const work = r.works?.[0];
+                const rest = (r.works?.length ?? 0) - 1;
+                return (
+                  <li key={r.id}>
+                    {go(r, "ch", [r.kind && (KIND_NOTE[r.kind] ?? r.kind), work?.role && ROLE_LABEL[work.role]].filter(Boolean).join("・"))}
+                    <span className="cast__dots" aria-hidden="true" />
+                    {work && go(work, "wk", [workMeta(work), rest > 0 && `ほか${rest}作品`].filter(Boolean).join("・"), { right: true })}
+                  </li>
+                );
+              }}
+            </ListSection>
+          )}
+        </>
       )}
 
       {d.kind === "ch" && (
@@ -360,6 +491,7 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
         <>
           <ListSection
             title="キャスト"
+            showCount={false}
             items={d.cast ?? []}
             text={(c) => `${c.name} ${(c.vas ?? []).map((v) => v.name).join(" ")}`}
             className="cast"

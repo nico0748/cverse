@@ -49,7 +49,7 @@ node scripts/check-main-cast.mjs                                                
 node scripts/fetch-wikipedia-games.mjs                                              # 主要ゲーム（日本語版 Wikipedia）
 node scripts/fetch-wikidata-images.mjs                                              # ゲームと Wikipedia 由来の声優の画像（Wikidata / Commons）
 node scripts/fetch-anilist-game-images.mjs                                          # ゲームキャラの画像（AniList）
-node scripts/fetch-bangumi-game-images.mjs                                          # 残りのゲームキャラの画像（Bangumi）
+node scripts/fetch-bangumi-game-images.mjs                                          # 残りのゲームキャラの画像と、画像の無いゲーム作品のカバー（Bangumi）
 node scripts/fetch-schaledb-images.mjs                                              # ブルーアーカイブの生徒アイコン（SchaleDB）
 node scripts/enrich-wikidata.mjs                                                    # Wikidata / Wikipedia で読み・活動開始年などを補う
 python3 scripts/guess_readings.py                                                   # まだ読みの無い作品に推定の読み（pip install pykakasi）
@@ -99,7 +99,7 @@ Wikimedia の API は共有の回線だと回数制限に当たりやすいの�
 | `cargo run --release -p cverse-cli -- bench web/public/data` | 片方向 BFS と双方向 BFS の比較計測 |
 | `cargo run -p cverse-cli -- candidates data/source` | 名寄せの候補（自動統合 / 確認待ち）を JSON で出力 |
 
-デプロイは `web/dist` を静的ホスティング（Cloudflare Pages など）に置くだけでよい。X などで共有したときに
+デプロイは `web/dist` を静的ホスティング（Cloudflare Pages など）に置くだけでよい（手順と設定は [docs/deploy.md](docs/deploy.md)）。X などで共有したときに
 OGP の画像が出るよう、ビルド時に公開先の URL を `VITE_SITE_URL`（例: `https://cverse.pages.dev`）で渡す。
 
 ## 実装済みの機能
