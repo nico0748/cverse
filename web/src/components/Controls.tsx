@@ -120,11 +120,11 @@ export function Controls({ depth, onDepth, filter, onFilter }: Props) {
               </div>
             </fieldset>
             <fieldset>
-              <legend>役</legend>
+              <legend>キャラ</legend>
               <div className="chips">
                 <label className="check">
                   <input type="checkbox" checked={filter.mainOnly} onChange={(e) => set({ mainOnly: e.target.checked })} />
-                  主役だけ
+                  メインキャラだけ
                 </label>
               </div>
             </fieldset>
@@ -155,9 +155,9 @@ export function Legend() {
         </li>
       ))}
       <li className="legend__sep" aria-hidden="true" />
-      <li className="legend__line legend__line--voices">演じる</li>
-      <li className="legend__line">登場する</li>
-      <li className="legend__line legend__line--series">シリーズ</li>
+      <li className="legend__line legend__line--voices">CV</li>
+      <li className="legend__line">出演</li>
+      <li className="legend__line legend__line--series">関連作</li>
     </ul>
   );
 }

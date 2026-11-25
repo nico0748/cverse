@@ -7,7 +7,8 @@ export const KIND_LABEL: Record<Kind, string> = { va: "声優", ch: "キャラ",
 
 export type Role = "MAIN" | "SUPPORTING" | "BACKGROUND";
 
-export const ROLE_LABEL: Record<Role, string> = { MAIN: "主役", SUPPORTING: "脇役", BACKGROUND: "その他" };
+/** 一覧で役に添える札。上下を感じさせないよう、メインキャラだけに付けてほかは何も付けない。 */
+export const ROLE_LABEL: Record<Role, string> = { MAIN: "メイン", SUPPORTING: "", BACKGROUND: "" };
 
 export const FORMAT_LABEL: Record<string, string> = {
   TV: "TV",
@@ -75,8 +76,8 @@ export type PathMode = "bfs" | "main" | "weighted";
 
 export const PATH_MODE_LABEL: Record<PathMode, string> = {
   bfs: "最短",
-  main: "主役のみ",
-  weighted: "主役を優先",
+  main: "メインキャラのみ",
+  weighted: "メインキャラを優先",
 };
 
 export interface PathData {
