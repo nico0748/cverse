@@ -16,6 +16,20 @@ CVerse はサーバーを持たない静的サイトなので、`web/dist` を�
 ほかの URL（タイムアタックの共有リンク、詳細の「共有」）は、開いているページの `location` から作るので設定は要らない。
 独自ドメインを付けたら、`VITE_SITE_URL` もそのドメインに変えてビルドし直す。
 
+## Vercel の設定（いま使っている公開先）
+
+Vercel のビルド環境にも Rust が無いので、`web/vercel.json` がインストールとビルドを `scripts/vercel/` のスクリプトに任せる。
+スクリプトが rustup（WASM ターゲット付き）と wasm-pack を入れ、`npm run wasm` → `npm run data` → `npm run build` の順に実行する。
+
+| 項目 | 値 |
+|---|---|
+| Root Directory | `web`（「Include files outside the root directory」は有効のまま。`crates/` と `data/` を使う） |
+| Framework Preset | Vite（`web/vercel.json` でも指定している） |
+| Build / Install / Output | 画面では上書きしない（`web/vercel.json` が決める） |
+| `VITE_SITE_URL` | 設定しなければ、Vercel が渡す本番のドメイン（`VERCEL_PROJECT_PRODUCTION_URL`）を使う。独自ドメインにしたら Environment Variables で設定する |
+
+Root Directory を `crates/cverse-cli` にすると Rust のサーバー関数として扱われ、ページが `500 FUNCTION_INVOCATION_FAILED` になる。
+
 ## Cloudflare Pages の設定
 
 ### おすすめ: GitHub Actions でビルドして Pages に上げる（Direct Upload）
