@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sceneFromPath, sceneFromView } from "./scene";
+import { relativeLabel, sceneFromPath, sceneFromView } from "./scene";
 import { createIdList } from "./store";
 import { Slot, type Kind, type PathData, type ViewData, type ViewNode } from "./types";
 
@@ -104,5 +104,17 @@ describe("お気に入りと履歴の保存", () => {
     stop();
     list.write([]);
     expect(calls).toBe(1);
+  });
+});
+
+describe("relativeLabel", () => {
+  it("同じ題名で始まる関連作は、続きだけを名札にする", () => {
+    expect(relativeLabel("僕のヒーローアカデミア THE MOVIE", "僕のヒーローアカデミア")).toBe("…THE MOVIE");
+    expect(relativeLabel("進撃の巨人：後編", "進撃の巨人")).toBe("…後編");
+  });
+  it("頭が違う・続きが短すぎるときはそのまま", () => {
+    expect(relativeLabel("ワンパンマン", "僕のヒーローアカデミア")).toBe("ワンパンマン");
+    expect(relativeLabel("鬼滅の刃2", "鬼滅の刃")).toBe("鬼滅の刃2");
+    expect(relativeLabel("鬼滅の刃", undefined)).toBe("鬼滅の刃");
   });
 });

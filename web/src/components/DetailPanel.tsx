@@ -112,7 +112,7 @@ function ListSection<T>({
   children: (item: T, index: number) => ReactNode;
   empty?: string;
   className?: string;
-  /** 見出しの横に置く切り替え（声優ページのキャラ順／年表）。 */
+  /** 見出しの横に置く切り替え（声優ページの一覧／年表）。 */
   toggle?: ReactNode;
   /** 件数の札を出すか。収集した分だけなので、出演やキャストの全部と取り違えやすい一覧では出さない。 */
   showCount?: boolean;
@@ -334,7 +334,7 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
       </div>
     );
   }
-  if (current === null) return <p className="panel__msg">このノードの詳細データがありません。</p>;
+  if (current === null) return <p className="panel__msg">この項目の詳しいデータはまだありません。</p>;
   if (!current) {
     return (
       <div className="skeleton" role="status" aria-label="読み込み中">
@@ -348,7 +348,7 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
 
   const d = current;
   // 名鑑の項目のように、見出しの下へ「項目名: 値」で並べる。
-  const facts: [string, string][] = [];
+  const facts: [string, ReactNode][] = [];
   if (d.kind === "va") {
     if (d.agency) facts.push(["所属", d.agency]);
     if (d.debutYear) facts.push(["活動開始", `${d.debutYear}年`]);
@@ -361,7 +361,17 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
     if (d.format) facts.push(["形態", FORMAT_LABEL[d.format] ?? d.format]);
     if (d.year) facts.push(["開始", `${d.year}年`]);
     if (d.series && d.series !== d.name) facts.push(["シリーズ", d.series]);
-    if (d.parts && d.parts.length > 1) facts.push(["シーズン", `${d.parts.length}作をまとめて表示（${d.parts.join("、")}）`]);
+    if (d.parts && d.parts.length > 1) facts.push([
+        "シーズン",
+        <details className="detail__parts">
+          <summary>{d.parts.length}作をまとめています</summary>
+          <ul>
+            {d.parts.map((part) => (
+              <li key={part}>{part}</li>
+            ))}
+          </ul>
+        </details>,
+      ]);
   }
   if (d.aliases?.length) facts.push(["別名", d.aliases.join("、")]);
   const hasWikipedia = d.sources?.some((s) => s.source === "wikipedia");
@@ -386,7 +396,7 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
   const roleToggle = (
     <div className="segmented view-toggle" role="group" aria-label="出演の並べ方">
       <button type="button" className={`seg${roleView === "list" ? " is-on" : ""}`} aria-pressed={roleView === "list"} onClick={() => chooseRoleView("list")}>
-        キャラ順
+        一覧
       </button>
       <button type="button" className={`seg${roleView === "timeline" ? " is-on" : ""}`} aria-pressed={roleView === "timeline"} onClick={() => chooseRoleView("timeline")}>
         年表
@@ -418,7 +428,8 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
             <KindIcon kind={d.kind} />
             {KIND_LABEL[d.kind]}
           </p>
-          <h1>{d.name}</h1>
+          {/* 長い題名は一回り小さくして、見出しが 3 行以上に崩れないようにする。 */}
+          <h1 className={Array.from(d.name).length > 9 ? "detail__name--long" : undefined}>{d.name}</h1>
           {d.reading && <p className="detail__reading">{d.reading}</p>}
           {d.nameEn && <p className="detail__en" lang="en">{d.nameEn}</p>}
           {facts.length > 0 && (

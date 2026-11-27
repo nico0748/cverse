@@ -81,7 +81,7 @@ function Endpoint({
           {canPick && (
             <button type="button" className={`button${picking ? " is-on" : ""}`} aria-pressed={picking} onClick={() => onPicking(picking ? null : which)}>
               <Icon name="target" />
-              {picking ? "図のノードを押してください" : "図から選ぶ"}
+              {picking ? "図のアイコンを押してください" : "図から選ぶ"}
             </button>
           )}
         </div>
@@ -132,7 +132,7 @@ export function PathPanel({
           <Icon name="close" />
         </button>
       </div>
-      <p className="muted">2 つ選ぶと、共演や出演をたどっていちばん近い道を探します。声優・キャラ・作品のどれでも選べます。</p>
+      <p className="muted">2 つ選ぶと、共演や出演をたどって、いちばん近い道を探します。声優・キャラ・作品のどれでも選べます。</p>
 
       <div className="path__ends">
         <Endpoint
@@ -208,7 +208,7 @@ export function PathPanel({
               ? "上の「絞り込みを外す」で見つかることがあります。"
               : draft.mode === "main"
                 ? "探し方を「最短」か「メインキャラを優先」に変えると見つかることがあります。"
-                : "この 2 つは、収録しているデータの中ではつながっていません。"}
+                : "この 2 つは、いまのデータの中ではつながっていません。"}
           </p>
         )}
         {result?.found && !same && (
@@ -218,7 +218,7 @@ export function PathPanel({
                 <strong>直接つながっています</strong>
               ) : people && result.costar > 0 ? (
                 <strong>
-                  共演で<span className="path__steps">{result.costar}</span>ステップ
+                  共演<span className="path__steps">{result.costar}</span>回でつながります
                 </strong>
               ) : (
                 <strong>

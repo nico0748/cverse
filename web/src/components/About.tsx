@@ -52,9 +52,9 @@ export function About({ open, onClose, meta }: { open: boolean; onClose: () => v
         <section>
           <h3>操作</h3>
           <dl className="about__keys">
-            <dt>ノードを押す</dt>
-            <dd>そのノードを中心にして、つながりを開き直します</dd>
-            <dt>ノードに重ねる・長押し</dt>
+            <dt>アイコンを押す</dt>
+            <dd>押した声優・キャラ・作品を中心に、図を描き直します</dd>
+            <dt>アイコンに重ねる・長押し</dt>
             <dd>担当声優などの補足を表示します</dd>
             <dt>ドラッグ・ホイール・ピンチ</dt>
             <dd>図を動かす、拡大・縮小する</dd>
@@ -80,7 +80,7 @@ export function About({ open, onClose, meta }: { open: boolean; onClose: () => v
           {meta && (
             <p className="muted">
               声優{meta.counts.voiceActors.toLocaleString()}人、キャラ{meta.counts.characters.toLocaleString()}人、作品
-              {meta.counts.works.toLocaleString()}本を収録{meta.dataDate && `（${meta.dataDate} 取得）`}。
+              {meta.counts.works.toLocaleString()}本のデータがあります{meta.dataDate && `（${meta.dataDate} 時点）`}。すべての出演を網羅しているわけではありません。
             </p>
           )}
           <p>

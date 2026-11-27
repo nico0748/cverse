@@ -94,12 +94,17 @@ function createSigma(graph: Graph, container: HTMLElement) {
   });
 }
 
+/** これより線が多い図は、線を 1 段引いて描く。 */
+const CROWDED = 60;
+const crowdedScene = (scene: Scene | null) => (scene?.edges.length ?? 0) > CROWDED;
+
 /**
- * 線の色と太さ。「演じる」は声優の色、「登場する」は墨色で、主役は太く脇役は細く引く。
+ * 線の色と太さ。「演じる」は声優の色、「登場する」は墨色で、メインキャラは太く、それ以外は細く引く。
  * 地の上で線として読める濃さ（3:1 前後）を保ち、2 段目より先だけ少し引く。
  */
-function edgeLook(e: SceneEdge, p: Palette): { color: string; size: number; zIndex: number } {
-  const fade = e.dim ? 0.6 : 1;
+function edgeLook(e: SceneEdge, p: Palette, crowded = false): { color: string; size: number; zIndex: number } {
+  // 線が多い図（出演の多い声優など）は、放射状の線が絵と名札を覆わないよう 1 段引く。
+  const fade = (e.dim ? 0.6 : 1) * (crowded ? 0.62 : 1);
   const by: Record<EdgeStyle, { color: string; size: number; zIndex: number }> = {
     voices: { color: alpha(p.kinds.va.ring, 0.92 * fade), size: e.dim ? 0.9 : 1.8, zIndex: 0 },
     appears: { color: alpha(p.inkDim, (e.role === 0 ? 0.78 : 0.5) * fade), size: e.dim ? 0.8 : e.role === 0 ? 1.7 : 1.1, zIndex: 0 },
@@ -555,7 +560,7 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
       if (node) graph.setNodeAttribute(id, "color", p.kinds[node.kind].ring);
     });
     for (const e of sceneRef.current?.edges ?? []) {
-      if (graph.hasEdge(e.a, e.b)) graph.mergeEdgeAttributes(e.a, e.b, edgeLook(e, p));
+      if (graph.hasEdge(e.a, e.b)) graph.mergeEdgeAttributes(e.a, e.b, edgeLook(e, p, crowdedScene(sceneRef.current)));
     }
     sigma.scheduleRender();
   }, [theme]);
@@ -576,7 +581,7 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
       const e = hingeRef.current;
       hingeRef.current = null;
       if (!e || !graph.hasEdge(e.a, e.b)) return;
-      graph.mergeEdgeAttributes(e.a, e.b, edgeLook(e, paletteRef.current ?? p));
+      graph.mergeEdgeAttributes(e.a, e.b, edgeLook(e, paletteRef.current ?? p, crowdedScene(sceneRef.current)));
       sigma.scheduleRender();
     };
     if (keyChanged || !scene) unhinge();
@@ -637,13 +642,15 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
     // 線も残せるものは残す。消えるノードの線はノードと一緒に薄れ、ほかの古い線は落とす。
     const pair = (a: string, b: string) => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`);
     const wanted = new Set(scene.edges.map((e) => pair(e.a, e.b)));
+    const crowded = crowdedScene(scene);
     graph.forEachEdge((key, _attrs, a, b) => {
       if (!wanted.has(pair(a, b)) && !leaving.has(a) && !leaving.has(b)) graph.dropEdge(key);
     });
     for (const e of scene.edges) {
       if (!graph.hasNode(e.a) || !graph.hasNode(e.b)) continue;
-      if (graph.hasEdge(e.a, e.b)) graph.mergeEdgeAttributes(e.a, e.b, edgeLook(e, p));
-      else graph.addEdge(e.a, e.b, edgeLook(e, p));
+      const look = edgeLook(e, p, crowded);
+      if (graph.hasEdge(e.a, e.b)) graph.mergeEdgeAttributes(e.a, e.b, look);
+      else graph.addEdge(e.a, e.b, look);
     }
     nodesRef.current = next;
     leavingRef.current = leaving;

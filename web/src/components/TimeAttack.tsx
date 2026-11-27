@@ -67,7 +67,7 @@ export function TimeAttackIntro({ state, onGenerate, onStart, onLobby }: IntroPr
           <>
             <h1 className="ta-title">スタートから、ゴールまで。</h1>
             <p className="ta-lead">
-              出題された声優（またはキャラ）から、相関図のノードを押して隣へ隣へと渡り、ゴールの声優（またはキャラ）に着くまでのタイムを競います。検索は使えません。
+              出題された声優（またはキャラ）から、相関図のアイコンを押して隣へ隣へと渡り、ゴールの声優（またはキャラ）に着くまでのタイムを競います。検索は使えません。
             </p>
             <button type="button" className="button button--primary ta-daily" onClick={() => onGenerate("normal", true)}>
               今日の1問に挑戦（{Number(jstDate().slice(5, 7))}/{Number(jstDate().slice(8))}・ふつう）
@@ -101,7 +101,7 @@ export function TimeAttackIntro({ state, onGenerate, onStart, onLobby }: IntroPr
             </h1>
             <Matchup puzzle={puzzle} />
             <ul className="ta-rules">
-              <li>相関図のノードを押すと、そこへ進みます。「ここから進める先」の一覧からも選べます。</li>
+              <li>相関図のアイコンを押すと、そこへ進みます。「ここから進める先」の一覧からも選べます。</li>
               <li>作品をはさんで、キャラ → 作品 → キャラ、と渡っていきます。</li>
               <li>最短なら {puzzle.shortest.length - 1} 手で着きます。</li>
             </ul>
