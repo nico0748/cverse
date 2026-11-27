@@ -39,7 +39,7 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
             あのキャラも。
           </h1>
           <p className="home__lead">
-            声優・キャラ・作品のつながりを、1枚の相関図でたどれます。気になる名前を入れて、押したノードから次へ次へと渡り歩いてください。
+            あの声の人は、ほかに誰を演じている？ 声優・キャラ・作品のつながりを、1枚の相関図でたどれます。名前を入れたら、気になる顔を押していくだけ。
           </p>
           <SearchBox
             label="声優・キャラ・作品を検索"
@@ -123,7 +123,7 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
         {pairs.length > 0 && (
           <section aria-labelledby="home-path">
             <h2 id="home-path">2人のつながりを調べる</h2>
-            <p className="home__note">共演した作品をたどって、2人が何ステップでつながるかを探します。</p>
+            <p className="home__note">同じ作品への出演をたどって、2人がどうつながっているかを探します。</p>
             <ul className="pairs">
               {pairs.map(([a, b]) => (
                 <li key={`${a.id}-${b.id}`}>
@@ -143,7 +143,7 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
 
         <section aria-labelledby="home-ta" className="home__ta">
           <h2 id="home-ta">つながりタイムアタック</h2>
-          <p className="home__note">出題された声優やキャラから、相関図をたどってゴールまで。何秒で着けるかを競って、結果を X で共有できます。</p>
+          <p className="home__note">出題された声優やキャラから、相関図をたどってゴールまで。何秒で着けるかを競い、結果を X で共有できます。</p>
           <button type="button" className="button button--primary" onClick={onTimeAttack}>
             <Icon name="timer" />
             挑戦する
@@ -154,8 +154,8 @@ export function Home({ meta, featured, featuredWorks, favorites, history, hero, 
           {meta && (
             <p>
               声優{meta.counts.voiceActors.toLocaleString()}人、キャラ{meta.counts.characters.toLocaleString()}人、作品
-              {meta.counts.works.toLocaleString()}本を収録
-              {meta.dataDate && <>（{meta.dataDate} 取得）</>}
+              {meta.counts.works.toLocaleString()}本
+              {meta.dataDate && <>（{meta.dataDate} 時点）</>}
             </p>
           )}
           <p>

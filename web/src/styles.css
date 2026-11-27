@@ -1310,6 +1310,10 @@ button.crumbs__item:hover {
   text-wrap: balance;
 }
 
+.detail h1.detail__name--long {
+  font-size: var(--fs-xl);
+}
+
 .detail__reading,
 .detail__en {
   color: var(--ink-2);
@@ -1834,6 +1838,8 @@ button.crumbs__item:hover {
 
 .home__lead {
   max-width: 34em;
+  word-break: auto-phrase;
+  text-wrap: pretty;
   margin: 16px 0 22px;
   color: var(--ink-2);
 }
@@ -1860,6 +1866,7 @@ button.crumbs__item:hover {
 
 .home__note {
   margin: -6px 0 12px;
+  word-break: auto-phrase;
   color: var(--ink-2);
   font-size: var(--fs-s);
 }
@@ -2999,5 +3006,161 @@ button.crumbs__item:hover {
 @keyframes fade-in {
   from {
     opacity: 0;
+  }
+}
+
+/* まとめた作品（シーズン）は数だけ見せ、押すと一覧を開く */
+.detail__parts summary {
+  cursor: pointer;
+  color: var(--ink);
+  list-style: none;
+}
+
+.detail__parts summary::-webkit-details-marker {
+  display: none;
+}
+
+.detail__parts summary::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 0 2px 8px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  rotate: 45deg;
+  transition: rotate var(--dur-fast) var(--ease-move);
+}
+
+.detail__parts[open] summary::after {
+  rotate: 225deg;
+  margin-bottom: -1px;
+}
+
+.detail__parts summary:hover {
+  color: var(--accent-ink);
+}
+
+.detail__parts ul {
+  margin: 4px 0 2px;
+  padding-left: 1.1em;
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  list-style: disc;
+}
+
+/* ---- 読み込み中の印（index.html の起動時の表示と同じ形と拍） ----
+   繰り返し動くのはこれだけ。読み込みが終われば消える。動きを減らす設定では止めて、形だけ見せる */
+.loader {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  color: var(--ink-2);
+  animation: fade-in var(--dur-fast) linear var(--dur-slow) both;
+}
+
+.stage .loader {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  align-content: center;
+  pointer-events: none;
+}
+
+.app--home .stage .loader {
+  left: min(600px, 50%);
+}
+
+.loader__text {
+  font-size: var(--fs-s);
+  letter-spacing: 0.04em;
+}
+
+.loader__node,
+.loader__link {
+  animation-duration: calc(var(--dur-scene) * 3.5);
+  animation-iteration-count: infinite;
+  animation-timing-function: var(--ease-enter);
+  animation-fill-mode: backwards;
+}
+
+.loader__node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation-name: loader-pop;
+}
+
+.loader__node--1 {
+  fill: var(--va);
+}
+
+.loader__node--2 {
+  fill: var(--ch);
+  animation-delay: calc(var(--dur-scene) * 0.7);
+}
+
+.loader__node--3 {
+  fill: var(--wk);
+  animation-delay: calc(var(--dur-scene) * 1.4);
+}
+
+.loader__link {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  animation-name: loader-draw;
+}
+
+.loader__link--1 {
+  animation-delay: calc(var(--dur-scene) * 0.35);
+}
+
+.loader__link--2 {
+  animation-delay: calc(var(--dur-scene) * 1.05);
+}
+
+@keyframes loader-pop {
+  0% {
+    opacity: 0;
+    scale: 0.4;
+  }
+  14% {
+    opacity: 1;
+    scale: 1;
+  }
+  78% {
+    opacity: 1;
+    scale: 1;
+  }
+  100% {
+    opacity: 0;
+    scale: 1;
+  }
+}
+
+@keyframes loader-draw {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 1;
+  }
+  14% {
+    stroke-dashoffset: 0;
+  }
+  78% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loader__node,
+  .loader__link {
+    animation: none;
   }
 }

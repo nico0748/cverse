@@ -7,6 +7,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { GraphView } from "./components/GraphView";
 import { Home } from "./components/Home";
 import { Icon, LogoMark } from "./components/Icon";
+import { Loader } from "./components/Loader";
 import { MyList } from "./components/MyList";
 import { PathPanel, type PathDraft } from "./components/PathPanel";
 import { SearchBox } from "./components/SearchBox";
@@ -33,7 +34,7 @@ interface HistoryState {
 /** つながりの結果を一言で（詳細の見出しと、畳んだシートの両方で同じ言い方をする）。 */
 function pathSummary(path: PathData, from: NodeBrief | null | undefined, to: NodeBrief | null | undefined): string {
   if (path.hops <= 1) return "直接つながっています";
-  if (from?.kind === "va" && to?.kind === "va" && path.costar > 0) return `共演で${path.costar}ステップ`;
+  if (from?.kind === "va" && to?.kind === "va" && path.costar > 0) return `共演${path.costar}回でつながる`;
   return `${path.hops}回たどるとつながります`;
 }
 
@@ -317,7 +318,7 @@ export function App() {
         requestAnimationFrame(() => document.getElementById("ta-filter")?.focus());
         return;
       }
-      setTaNote(ta.moveTo(node.id) ? "" : "このノードへは、今いるところから直接進めません");
+      setTaNote(ta.moveTo(node.id) ? "" : "ここへは、今いるところから直接は進めません");
       return;
     }
     dismissHint();
@@ -566,6 +567,7 @@ export function App() {
               )}
             </div>
             {scene && <Legend />}
+            {!scene && !notFound && !viewError && !route.path && (route.center || !narrow) && <Loader />}
             {notFound && !route.pathOpen && (
               <div className="stage__empty" role="alert">
                 <h1>このページは見つかりませんでした</h1>
@@ -578,7 +580,7 @@ export function App() {
             <div className="stage__notes" aria-live="polite">
               {picking && (
                 <p className="note note--accent">
-                  {picking === "from" ? "始点" : "終点"}にするノードを押してください
+                  {picking === "from" ? "始点" : "終点"}にするアイコンを押してください
                   <button type="button" className="link" onClick={() => setPicking(null)}>
                     やめる
                   </button>
@@ -594,7 +596,7 @@ export function App() {
               )}
               {shown && route.center && !notFound && !showingPath && shown.view.center === route.center && shown.view.nodes.length === 1 && (
                 <p className="note">
-                  {filtered ? "この条件ではつながるノードがありません。" : "つながるノードがまだ収録されていません。"}
+                  {filtered ? "この条件ではつながる相手がいません。" : "つながる相手が、まだデータにありません。"}
                   {filtered && (
                     <button type="button" className="link" onClick={() => setFilter(DEFAULT_FILTER)}>
                       絞り込みを外す
@@ -602,9 +604,9 @@ export function App() {
                   )}
                 </p>
               )}
-              {hint && route.center && !showingPath && !picking && !notFound && (
+              {hint && scene && route.center && !showingPath && !picking && !notFound && (
                 <p className="note">
-                  ノードを押すと、そこが中心になります
+                  顔や作品を押すと、そこを中心に図が広がります
                   <button type="button" className="link" onClick={dismissHint}>
                     わかった
                   </button>
@@ -623,11 +625,11 @@ export function App() {
             zoomControls={!atHome && !gameIntro && !!scene && !(narrow && sheet === "full")}
             label={
               inGame
-                ? "つながりタイムアタックの相関図。押したノードへ進みます。進める先は一覧にもあります。"
+                ? "つながりタイムアタックの相関図。押したアイコンへ進みます。進める先は一覧にもあります。"
                 : showingPath
-                ? "2 つのノードをつなぐ経路の図。内容は「つながりを調べる」の一覧にもあります。"
+                ? "2 つをつなぐ道の図。内容は「つながりを調べる」の一覧にもあります。"
                 : `${(route.center ? centerBrief?.label : hero?.label) ?? ""}の相関図。${
-                    route.depth > 1 ? "直接つながるノードは詳細の一覧にもあります。" : "内容は詳細の一覧にもあります。"
+                    route.depth > 1 ? "直接つながる相手は詳細の一覧にもあります。" : "内容は詳細の一覧にもあります。"
                   }`
             }
           />
@@ -740,7 +742,7 @@ export function App() {
                   onClearFilter={() => setFilter(DEFAULT_FILTER)}
                 />
               ) : (
-                <p className="panel__msg">{notFound ? "上の検索欄から、声優・キャラ・作品を探せます。" : "読み込み中…"}</p>
+                <p className="panel__msg">{notFound ? "上の検索欄から、声優・キャラ・作品を探せます。" : ""}</p>
               )}
             </ErrorBoundary>
           </div>

@@ -89,7 +89,7 @@ function workSub(w: number): string {
   return [years[w] || "", FORMAT_LABEL[FORMAT[formats[w]]] ?? ""].filter(Boolean).join("・");
 }
 
-/** 検索結果やパンくずに添える補足。声優は代表的な役、キャラは代表作（主役 → 番号の若い＝人気の高い作品）。 */
+/** 検索結果やパンくずに添える補足。声優は代表的なキャラ、キャラは代表作（主役 → 番号の若い＝人気の高い作品）。 */
 function sub(u: number): string | undefined {
   if (kinds[u] === 2) return workSub(u) || undefined;
   if (kinds[u] === 0) {
@@ -100,7 +100,7 @@ function sub(u: number): string | undefined {
       count++;
       if (best < 0 || scores[v] > scores[best]) best = v;
     }
-    return best < 0 ? undefined : `${labels[best]}役${count > 1 ? "など" : ""}`;
+    return best < 0 ? undefined : `${labels[best]}${count > 1 ? "ほか" : ""}`;
   }
   if (kinds[u] === 1) {
     let best: [number, number] | null = null;

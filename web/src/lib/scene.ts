@@ -61,6 +61,16 @@ export interface Scene {
 
 const initialOf = (label: string) => Array.from(label.trim())[0] ?? "?";
 
+/**
+ * 作品が中心のとき、同じ題名で始まる関連作（続編・劇場版）は、題名の続きだけを名札にする。
+ * 「僕のヒーローアカデミア T…」のように、どれも同じ頭で切れて見分けられなくなるのを防ぐ。
+ */
+export function relativeLabel(label: string, centerLabel: string | undefined): string {
+  if (!centerLabel || label === centerLabel || !label.startsWith(centerLabel)) return label;
+  const rest = label.slice(centerLabel.length).replace(/^[\s:：\-－―~〜・]+/, "");
+  return Array.from(rest).length >= 2 ? `…${rest}` : label;
+}
+
 function tooltipOf(n: ViewNode): string | undefined {
   if (n.kind === "ch" && n.voices?.length) return `CV ${n.voices.join(" / ")}`;
   if (n.kind === "wk" && n.note) return n.note;
@@ -69,14 +79,16 @@ function tooltipOf(n: ViewNode): string | undefined {
   return undefined;
 }
 
-function sceneNode(n: ViewNode, p: Placed, trail: Set<string>): SceneNode {
+function sceneNode(n: ViewNode, p: Placed, trail: Set<string>, centerWork?: string): SceneNode {
   const { shape, scale } = KIND_SHAPE[n.kind];
   const isCenter = n.slot === Slot.Center;
   const anchored = n.slot === Slot.Top || n.slot === Slot.Bottom || n.slot === Slot.Context;
   const more = n.kind === "more";
+  const label = n.kind === "wk" && !isCenter ? relativeLabel(n.label, centerWork) : n.label;
+  const tooltip = tooltipOf(n);
   return {
     id: n.id,
-    label: n.label,
+    label,
     kind: n.kind,
     x: p.x,
     y: p.y,
@@ -88,7 +100,7 @@ function sceneNode(n: ViewNode, p: Placed, trail: Set<string>): SceneNode {
     image: n.image,
     initial: more ? "…" : initialOf(n.label),
     note: n.slot === Slot.Top && n.kind === "va" ? n.note : undefined,
-    tooltip: tooltipOf(n),
+    tooltip: label === n.label ? tooltip : [n.label, tooltip].filter(Boolean).join("・"),
     origin: n.group ?? undefined,
     target: more ? n.id.slice("more:".length) : n.id,
   };
@@ -119,7 +131,8 @@ export function sceneFromView(view: ViewData, trail: string[], options: LayoutOp
   const trailSet = new Set(trail);
   const level = new Map(nodes.map((n) => [n.id, n.level]));
   const quietAside = view.nodes[0]?.kind !== "va";
-  const sceneNodes = nodes.map((n) => sceneNode(n, positions.get(n.id)!, trailSet));
+  const centerWork = view.nodes[0]?.kind === "wk" ? view.nodes[0].label : undefined;
+  const sceneNodes = nodes.map((n) => sceneNode(n, positions.get(n.id)!, trailSet, centerWork));
 
   const edges: SceneEdge[] = view.edges.map((e) => ({
     a: e.a,

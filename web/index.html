@@ -28,10 +28,41 @@
       })();
     </script>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23ffffff'/><path d='M10 9.5L21 16L11 23.5' stroke='%2366708a' stroke-width='1.5' fill='none'/><circle cx='8.5' cy='8.5' r='6' fill='%23c2650a'/><rect x='16' y='11' width='11' height='11' rx='3.6' fill='%231a7fc4'/><rect x='4' y='19.5' width='9.5' height='9.5' rx='1' fill='%230d8a66'/></svg>" />
+    <style>
+      /* 起動時の表示（スクリプトが届くまで）。src/components/Loader.tsx と src/styles.css の .loader と同じ形と拍 */
+      .boot { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px;
+        background: #eef1f6; color: #4a5570; font: 13px/1.5 "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+        letter-spacing: 0.04em; }
+      :root[data-theme="dark"] .boot { background: #12172a; color: #aeb7ce; }
+      .boot__word { font-weight: 700; font-size: 18px; letter-spacing: 0.02em; color: #141b2f; }
+      :root[data-theme="dark"] .boot__word { color: #e8ecf6; }
+      .boot svg * { animation: 1680ms cubic-bezier(0.16, 1, 0.3, 1) infinite backwards; }
+      .boot circle, .boot rect { transform-box: fill-box; transform-origin: center; animation-name: boot-pop; }
+      .boot path { fill: none; stroke: #66708a; stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 1; animation-name: boot-draw; }
+      :root[data-theme="dark"] .boot path { stroke: #8f99b4; }
+      :root[data-theme="dark"] .boot circle { fill: #f0a93b; }
+      :root[data-theme="dark"] .boot rect:first-of-type { fill: #5bb8f5; }
+      :root[data-theme="dark"] .boot rect:last-of-type { fill: #35c796; }
+      @keyframes boot-pop { 0% { opacity: 0; scale: 0.4; } 14%, 78% { opacity: 1; scale: 1; } 100% { opacity: 0; } }
+      @keyframes boot-draw { 0% { stroke-dashoffset: 1; } 14% { stroke-dashoffset: 0; } 78% { opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 0; } }
+      @media (prefers-reduced-motion: reduce) { .boot svg * { animation: none; } }
+    </style>
     <title>CVerse | 声優・キャラ・作品の相関図</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot" role="status">
+        <svg viewBox="0 0 32 32" width="56" height="56" aria-hidden="true">
+          <path d="M10 9.5L21 16" pathLength="1" style="animation-delay: 168ms" />
+          <path d="M21 16L11 23.5" pathLength="1" style="animation-delay: 504ms" />
+          <circle cx="8.5" cy="8.5" r="6" fill="#c2650a" />
+          <rect x="16" y="11" width="11" height="11" rx="3.6" fill="#1a7fc4" style="animation-delay: 336ms" />
+          <rect x="4" y="19.5" width="9.5" height="9.5" rx="1" fill="#0b6e52" style="animation-delay: 672ms" />
+        </svg>
+        <span class="boot__word">CVerse</span>
+        <span>声優・キャラ・作品の相関図を用意しています</span>
+      </div>
+    </div>
     <noscript>CVerse を使うには JavaScript を有効にしてください。</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
