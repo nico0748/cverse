@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useBriefs } from "../lib/hooks";
-import { imageUrl, loadDetail, safeHref } from "../lib/shard";
+import { scrollBehavior } from "../lib/motion";
+import { imageUrl, loadDetail, peekDetail, prefetchDetail, safeHref } from "../lib/shard";
 import {
   FORMAT_LABEL,
   KIND_LABEL,
@@ -194,7 +195,7 @@ function Timeline({ roles, go, toggle }: { roles: Role[]; go: Go; toggle: ReactN
   const jump = (year: number) => {
     const at = years.findIndex((y) => y.year === year);
     if (at >= limit) setLimit(at + 1);
-    requestAnimationFrame(() => document.getElementById(`tl-${year}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    requestAnimationFrame(() => document.getElementById(`tl-${year}`)?.scrollIntoView({ behavior: scrollBehavior(), block: "start" }));
   };
   const shown = years.slice(0, limit);
   return (
@@ -294,8 +295,16 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
     setRoleView(view);
   };
 
+  // 読み終えたシャードにあれば、骨組みを挟まずにこのフレームで描く。
+  const peeked = peekDetail(meta, id);
   useEffect(() => {
     let stale = false;
+    const ready = peekDetail(meta, id);
+    if (ready !== undefined) {
+      setDetail(ready);
+      setState(ready ? "ready" : "missing");
+      return;
+    }
     setState("loading");
     loadDetail(meta, id).then(
       (d) => {
@@ -310,11 +319,12 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
     };
   }, [meta, id, attempt]);
 
-  const ids = useMemo(() => (detail && detail.id === id ? refIds(detail) : []), [detail, id]);
+  const current = detail && detail.id === id ? detail : peeked;
+  const ids = useMemo(() => (current ? refIds(current) : []), [current]);
   const briefs = useBriefs(ids);
   const image = (ref: string) => briefs.get(ref)?.image;
 
-  if (state === "error") {
+  if (state === "error" && !current) {
     return (
       <div className="panel__msg" role="alert">
         <p>詳細を読み込めませんでした。通信状況を確認してください。</p>
@@ -324,8 +334,8 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
       </div>
     );
   }
-  if (state === "missing") return <p className="panel__msg">このノードの詳細データがありません。</p>;
-  if (!detail || detail.id !== id) {
+  if (current === null) return <p className="panel__msg">このノードの詳細データがありません。</p>;
+  if (!current) {
     return (
       <div className="skeleton" role="status" aria-label="読み込み中">
         <div className="skeleton__head" />
@@ -336,7 +346,7 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
     );
   }
 
-  const d = detail;
+  const d = current;
   // 名鑑の項目のように、見出しの下へ「項目名: 値」で並べる。
   const facts: [string, string][] = [];
   if (d.kind === "va") {
@@ -358,7 +368,13 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
   const hasAnilist = d.sources?.some((s) => s.source === "anilist");
 
   const go = (ref: { id: string; name: string }, kind: Kind, note?: string, opts: { right?: boolean } = {}) => (
-    <button type="button" className={`go${opts.right ? " go--right" : ""}`} onClick={() => onNavigate(ref.id)}>
+    <button
+      type="button"
+      className={`go${opts.right ? " go--right" : ""}`}
+      onPointerDown={() => prefetchDetail(meta, ref.id)}
+      onFocus={() => prefetchDetail(meta, ref.id)}
+      onClick={() => onNavigate(ref.id)}
+    >
       <Thumb kind={kind} src={image(ref.id)} label={ref.name} size={kind === "wk" ? 30 : 32} />
       <span className="go__text">
         <span className="go__name">{ref.name}</span>
@@ -394,7 +410,7 @@ export function DetailPanel({ meta, id, onNavigate, isFavorite, onToggleFavorite
   };
 
   return (
-    <article className="detail">
+    <article className="detail" key={d.id}>
       <header className={`detail__head detail__head--${d.kind}`}>
         <Thumb kind={d.kind} src={d.image && imageUrl(d.image.url)} label={d.name} size={102} portrait eager />
         <div className="detail__title">

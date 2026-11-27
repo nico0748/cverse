@@ -22,18 +22,41 @@ export function safeHref(url: string | null | undefined): string | undefined {
 }
 
 const shards = new Map<number, Promise<Record<string, Detail>>>();
+/** 読み終えたシャード。手元にあれば、詳細を待たずに同じフレームで描ける。 */
+const loaded = new Map<number, Record<string, Detail>>();
 
-/** 詳細パネル用のデータを、必要なシャードだけ読んで返す。 */
-export async function loadDetail(meta: Meta, id: string): Promise<Detail | null> {
-  const k = fnv1a(id) % meta.shardCount;
+const shardOf = (meta: Meta, id: string) => fnv1a(id) % meta.shardCount;
+
+function fetchShard(k: number): Promise<Record<string, Detail>> {
   let shard = shards.get(k);
   if (!shard) {
     shard = fetch(dataUrl(`nodes/${k}.json`)).then((r) => {
       if (!r.ok) throw new Error(`nodes/${k}.json: ${r.status}`);
-      return r.json();
+      return r.json() as Promise<Record<string, Detail>>;
     });
     shards.set(k, shard);
-    shard.catch(() => shards.delete(k));
+    shard.then(
+      (data) => loaded.set(k, data),
+      () => shards.delete(k),
+    );
   }
-  return (await shard)[id] ?? null;
+  return shard;
+}
+
+/** 詳細パネル用のデータを、必要なシャードだけ読んで返す。 */
+export async function loadDetail(meta: Meta, id: string): Promise<Detail | null> {
+  return (await fetchShard(shardOf(meta, id)))[id] ?? null;
+}
+
+/**
+ * 手元にある詳細を同期で返す。シャードを読み終えていれば詳細（無ければ null）、まだなら undefined。
+ */
+export function peekDetail(meta: Meta, id: string): Detail | null | undefined {
+  const data = loaded.get(shardOf(meta, id));
+  return data ? (data[id] ?? null) : undefined;
+}
+
+/** 押し始めたとき・フォーカスしたときに、先に読み始めておく（失敗は本番の読み込みで扱う）。 */
+export function prefetchDetail(meta: Meta, id: string): void {
+  fetchShard(shardOf(meta, id)).catch(() => {});
 }

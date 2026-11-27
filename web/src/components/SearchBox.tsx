@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { engine } from "../lib/engine";
+import { scrollBehavior } from "../lib/motion";
 import { KINDS, KIND_LABEL, type Kind, type NodeBrief } from "../lib/types";
 import { Icon } from "./Icon";
 import { Thumb } from "./Thumb";
@@ -148,7 +149,7 @@ export function SearchBox({ onPick, placeholder, hotkey, autoFocus, label, sugge
           setActive(0);
           // スマホの入口では、候補がキーボードの裏に隠れないよう、検索欄を画面の上へ寄せる。
           if (large && !open && window.matchMedia("(max-width: 560px)").matches) {
-            e.currentTarget.scrollIntoView({ block: "start", behavior: "smooth" });
+            e.currentTarget.scrollIntoView({ block: "start", behavior: scrollBehavior() });
           }
         }}
         // フォーカスが当たっただけでは開かない（トップ画面を開くたびに候補が被さらないように）。
