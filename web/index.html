@@ -36,7 +36,7 @@
       :root[data-theme="dark"] .boot { background: #12172a; color: #aeb7ce; }
       .boot__word { font-weight: 700; font-size: 18px; letter-spacing: 0.02em; color: #141b2f; }
       :root[data-theme="dark"] .boot__word { color: #e8ecf6; }
-      .boot svg * { animation: 1680ms cubic-bezier(0.16, 1, 0.3, 1) infinite backwards; }
+      .boot svg * { animation-duration: 1680ms; animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1); animation-iteration-count: infinite; animation-fill-mode: backwards; }
       .boot circle, .boot rect { transform-box: fill-box; transform-origin: center; animation-name: boot-pop; }
       .boot path { fill: none; stroke: #66708a; stroke-width: 1.5; stroke-linecap: round; stroke-dasharray: 1; animation-name: boot-draw; }
       :root[data-theme="dark"] .boot path { stroke: #8f99b4; }
@@ -45,7 +45,7 @@
       :root[data-theme="dark"] .boot rect:last-of-type { fill: #35c796; }
       @keyframes boot-pop { 0% { opacity: 0; scale: 0.4; } 14%, 78% { opacity: 1; scale: 1; } 100% { opacity: 0; } }
       @keyframes boot-draw { 0% { stroke-dashoffset: 1; } 14% { stroke-dashoffset: 0; } 78% { opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 0; } }
-      @media (prefers-reduced-motion: reduce) { .boot svg * { animation: none; } }
+      @media (prefers-reduced-motion: reduce) { .boot svg * { animation-name: none; } }
     </style>
     <title>CVerse | 声優・キャラ・作品の相関図</title>
   </head>
