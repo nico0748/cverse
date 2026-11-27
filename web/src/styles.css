@@ -71,6 +71,22 @@
   --panel-width: clamp(340px, 32vw, 420px);
   --topbar: 56px;
   --hit: 36px; /* 押せるものの最小の高さ（タッチ端末では 44px） */
+
+  /* 動き（docs/motion.md）。値の正は src/lib/motion.ts で、motion.test.ts が一致を確かめる */
+  --dur-instant: 90ms;
+  --dur-fast: 150ms;
+  --dur-base: 240ms;
+  --dur-slow: 360ms;
+  --dur-scene: 480ms;
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-move: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasis: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --dist-nudge: 4px;
+  --dist-s: 8px;
+  --dist-m: 16px;
+  --scale-from: 0.96;
+  --scale-press: 0.97;
 }
 
 :root[data-theme="dark"] {
@@ -2212,7 +2228,7 @@ button.crumbs__item:hover {
     border-left: 0;
     border-top: 1px solid var(--line);
     border-radius: var(--r-sheet) var(--r-sheet) 0 0;
-    transition: height 0.24s ease;
+    transition: height var(--dur-base) var(--ease-move);
     box-shadow: var(--shadow-2);
     overflow: hidden;
   }
@@ -2374,6 +2390,17 @@ button.crumbs__item:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* 位置と大きさは動かさず、透明度だけ残す */
+  :root {
+    --dur-slow: 150ms;
+    --dur-scene: 150ms;
+    --dist-nudge: 0px;
+    --dist-s: 0px;
+    --dist-m: 0px;
+    --scale-from: 1;
+    --scale-press: 1;
+  }
+
   .panel {
     transition: none;
   }
@@ -2900,4 +2927,77 @@ button.crumbs__item:hover {
 .timeline__note {
   margin-bottom: 4px;
   font-size: var(--fs-xs);
+}
+
+/* ---- 動き（docs/motion.md） ---- */
+
+/* 押したときの感触: 色は短く、押している間だけ少し縮む。弾みは付けない */
+.button,
+.tool-button,
+.nav-button,
+.icon-button,
+.seg,
+.zoom button,
+.more-button,
+.go,
+.node-row,
+.menu-item {
+  transition:
+    background-color var(--dur-instant) linear,
+    border-color var(--dur-instant) linear,
+    color var(--dur-instant) linear,
+    scale var(--dur-fast) var(--ease-move);
+}
+
+.button:active:not(:disabled),
+.tool-button:active:not(:disabled),
+.nav-button:active:not(:disabled),
+.icon-button:active:not(:disabled),
+.seg:active:not(:disabled),
+.zoom button:active,
+.more-button:active {
+  scale: var(--scale-press);
+  transition-duration: var(--dur-instant);
+}
+
+/* 浮いて出るもの: 開くときだけ、上から少し寄りながら現れる。閉じるのは即時 */
+.popover,
+.search__pop {
+  transform-origin: top center;
+  transition:
+    opacity var(--dur-fast) var(--ease-enter),
+    translate var(--dur-fast) var(--ease-enter),
+    scale var(--dur-fast) var(--ease-enter);
+}
+
+@starting-style {
+  .popover,
+  .search__pop {
+    opacity: 0;
+    translate: 0 calc(var(--dist-nudge) * -1);
+    scale: var(--scale-from);
+  }
+}
+
+/* 詳細の中身: 中心が替わるたび、図が動き出してから少し遅れて下から現れる（横には滑らせない） */
+.detail {
+  animation: rise-in var(--dur-base) var(--ease-enter) var(--dur-instant) both;
+}
+
+/* 骨組みは、読み込みが少し長引いたときだけ出す（手元にあるデータは骨組みを挟まずに描く） */
+.skeleton {
+  animation: fade-in var(--dur-fast) linear var(--dur-fast) both;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    translate: 0 var(--dist-nudge);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
 }

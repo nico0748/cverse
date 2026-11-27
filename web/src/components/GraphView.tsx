@@ -2,7 +2,9 @@ import Graph from "graphology";
 import { useEffect, useRef } from "react";
 import Sigma from "sigma";
 import { layerFill, sdfCircle } from "sigma/rendering";
+import { DUR, HINGE_HOLD, REDUCED_FADE, clamp01, ease, lerp, prefersReducedMotion } from "../lib/motion";
 import type { EdgeStyle, Scene, SceneEdge, SceneNode } from "../lib/scene";
+import { planScene, progressAt, valueAt, type Attrs, type Tween } from "../lib/sceneMotion";
 import { FOCUS_Y, dropQueued, onSpriteReady, sprite } from "../lib/sprites";
 import { CORNER, HALF, alpha, readPalette, type Palette, type Shape, type ThemeName } from "../lib/theme";
 import { KIND_LABEL } from "../lib/types";
@@ -20,14 +22,18 @@ interface Props {
   label: string;
 }
 
-const DURATION = 480;
 const LONG_PRESS = 450;
 const FONT_UI = '"BIZ UDPGothic", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", "Noto Sans JP", system-ui, sans-serif';
 // 名前と頭文字は見出しの書体の 700。無い字は本文のゴシックで出す（styles.css の --font-display と揃える）。
 const FONT_DISPLAY = `"Zen Maru Gothic", ${FONT_UI}`;
 
-const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+/** 出始め・消えかけのノードは押せない（親に重なって見えない子を押させない）。 */
+const CLICKABLE = 0.5;
+/**
+ * 線の不透明度をまとめて書き換えるときの印。Sigma 4.0.6 は印に zIndex が無いと「並べ直し不要」とみなし、
+ * まだ並べていない（同じフレームに足した）線で例外を出すので、zIndex も含めて並べ直させる。
+ */
+const EDGE_HINTS = { attributes: ["opacity", "zIndex"] };
 
 /** 角丸の四角（正方形と縦長）。キャンバスの重ね描き（roundRect）と同じ形になるよう、比率を埋め込む。 */
 const boxShape = (name: Shape) => ({
@@ -67,6 +73,7 @@ function createSigma(graph: Graph, container: HTMLElement) {
       edges: {
         size: { attribute: "size", defaultValue: 1 },
         color: { attribute: "color", defaultValue: "#888" },
+        opacity: { attribute: "opacity", defaultValue: 1 },
         zIndex: { attribute: "zIndex", defaultValue: 0 },
       },
     },
@@ -109,6 +116,7 @@ type Rect = [number, number, number, number];
 
 /** Sigma のキャンバス（線と当たり判定）と、画像・頭文字・名札・ツールチップの重ね描き。 */
 export function GraphView({ scene, onNodeClick, picking = false, theme, zoomControls = false, label }: Props) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
@@ -116,6 +124,19 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
   const graphRef = useRef<Graph | null>(null);
   if (!graphRef.current) graphRef.current = new Graph({ type: "undirected" });
   const nodesRef = useRef(new Map<string, SceneNode>());
+  /** 前の場面にいて、薄れて消えていく途中のノード。描くが、押せない。 */
+  const leavingRef = useRef(new Map<string, SceneNode>());
+  /** 中心の切り替えで動いている途中か。動いているあいだは必ず出す名札だけを描く。 */
+  const movingRef = useRef(false);
+  /** 着地した時刻。残りの名札はここから短く浮かび上がる。 */
+  const landedAtRef = useRef(0);
+  /** 前の切り替えを始めた時刻（続けて押されたら短くする）。 */
+  const lastStartRef = useRef(-Infinity);
+  /** 今の動きが着地する時刻。 */
+  const landAtRef = useRef(0);
+  /** 蝶番の線（前の中心と新しい中心をつなぐ線）と、元の色に戻すタイマー。 */
+  const hingeRef = useRef<SceneEdge | null>(null);
+  const hingeTimerRef = useRef(0);
   const sceneRef = useRef<Scene | null>(null);
   const paletteRef = useRef<Palette | null>(null);
   const hoveredRef = useRef<string | null>(null);
@@ -170,10 +191,12 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
       h: number;
       opacity: number;
       priority: number;
+      /** 動き終えたときの大きさ（画面上）。絵の細かさはこれで決め、動いている途中に頼み直さない。 */
+      rest: number;
     }
 
     // 1 つのノード: 強調の輪 → 種類の色の輪郭 → 画像（無ければ淡い地に頭文字）。
-    const drawTile = ({ node, x, y, r, opacity }: Item, p: Palette, hovered: boolean) => {
+    const drawTile = ({ node, x, y, r, opacity, rest }: Item, p: Palette, hovered: boolean) => {
       if (r < 3.5) return; // 小さすぎるときは WebGL の点だけ
       const colors = p.kinds[node.kind];
       ctx.globalAlpha = Math.min(1, opacity);
@@ -204,7 +227,7 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
       if (r < 8) return;
       const edge = Math.max(1.5, Math.min(3, r * 0.09));
       // 画面に出る高さ（端末の画素）に合う細かさの絵を頼む。中心や拡大時は細かい絵に差し替わる。
-      const px = 2 * r * HALF[node.shape].h * (window.devicePixelRatio || 1);
+      const px = 2 * Math.max(r, rest) * HALF[node.shape].h * (window.devicePixelRatio || 1);
       const picture = node.image ? sprite(node.image, node.shape, FOCUS_Y[node.kind], px) : null;
       shapePath(node.shape, x, y, r, -edge);
       ctx.fillStyle = colors.tint;
@@ -256,10 +279,14 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
       const hits = (r: Rect) => placed.some(([a, b, c, d]) => r[0] < c && r[2] > a && r[1] < d && r[3] > b);
       ctx.textAlign = "center";
       ctx.lineJoin = "round";
+      // 動いているあいだは必ず出す名札だけ。着地したら残りを短く浮かび上がらせる（飛び移って見えないように）。
+      const moving = movingRef.current;
+      const settle = clamp01((performance.now() - landedAtRef.current) / DUR.fast);
       for (const it of [...items].sort((a, b) => a.priority - b.priority)) {
         const { node, x, y, r, h } = it;
         const isHovered = node.id === hovered;
         const forced = node.forceLabel || isHovered;
+        if (!forced && moving) continue;
         // 2 段目より先の名前は、拡大して絵が見える大きさになったとき（か、指したとき）だけ出す。
         if (!forced && r < (node.level >= 2 ? 13 : 8)) continue;
         if (it.opacity < 0.5) continue;
@@ -290,7 +317,7 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
         const rect = free ?? below;
         const cx = (rect[0] + rect[2]) / 2;
         placed.push(rect);
-        ctx.globalAlpha = Math.min(1, it.opacity);
+        ctx.globalAlpha = Math.min(1, it.opacity) * (forced ? 1 : settle);
         ctx.font = font;
         ctx.textBaseline = "middle";
         const midY = (rect[1] + rect[3]) / 2 + 0.5;
@@ -346,7 +373,7 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
       const pr = projection();
       const items: Item[] = [];
       graph.forEachNode((id, attrs) => {
-        const node = nodesRef.current.get(id);
+        const node = nodesRef.current.get(id) ?? leavingRef.current.get(id);
         if (!node) return;
         const x = pr.o.x + attrs.x * pr.ux;
         const y = pr.o.y + attrs.y * pr.vy;
@@ -363,6 +390,7 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
           h: r * HALF[node.shape].h,
           opacity: attrs.opacity ?? 1,
           priority: rank * 1000 - r,
+          rest: node.size * pr.scale,
         });
       });
       // 奥（遠い段）から描き、中心とホバー中のノードを最後に重ねる。
@@ -429,8 +457,11 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
       touching = e.pointerType === "touch";
     };
     container.addEventListener("pointerdown", onPointerDown, true);
+    /** 押せるノードか（薄れていく途中や、出始めで見えないノードは押せない）。 */
+    const clickable = (id: string) =>
+      nodesRef.current.has(id) && (graph.getNodeAttribute(id, "opacity") ?? 1) >= CLICKABLE;
     sigma.on("enterNode", ({ node }) => {
-      if (touching) return;
+      if (touching || !clickable(node)) return;
       setHovered(node);
       showTip(node);
     });
@@ -466,7 +497,7 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
     container.addEventListener("touchcancel", cancelPress, { passive: true });
     sigma.on("clickNode", ({ node }) => {
       window.clearTimeout(pressTimer);
-      if (suppressClick) return;
+      if (suppressClick || !clickable(node)) return;
       hideTip();
       setHovered(null);
       const data = nodesRef.current.get(node);
@@ -506,6 +537,7 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
       offSprite();
       document.fonts?.removeEventListener?.("loadingdone", onFonts);
       cancelAnimationFrame(frameRef.current);
+      window.clearTimeout(hingeTimerRef.current);
       sigma.kill();
       sigmaRef.current = null;
     };
@@ -529,12 +561,25 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
   }, [theme]);
 
   // 場面が変わったら、前の画面にもいたノードは今の位置から滑らかに動かす（メンタルマップの維持）。
+  // 動きの決まりは docs/motion.md。計画は lib/sceneMotion.ts の純粋な関数で立てる。
   useEffect(() => {
     const sigma = sigmaRef.current;
     const graph = graphRef.current!;
     const p = paletteRef.current;
+    const root = rootRef.current;
     if (!sigma || !p) return;
     cancelAnimationFrame(frameRef.current);
+    window.clearTimeout(hingeTimerRef.current);
+    const keyChanged = sceneRef.current?.key !== scene?.key;
+    /** 蝶番の線を元の色に戻す。 */
+    const unhinge = () => {
+      const e = hingeRef.current;
+      hingeRef.current = null;
+      if (!e || !graph.hasEdge(e.a, e.b)) return;
+      graph.mergeEdgeAttributes(e.a, e.b, edgeLook(e, paletteRef.current ?? p));
+      sigma.scheduleRender();
+    };
+    if (keyChanged || !scene) unhinge();
     if (tipRef.current) tipRef.current.hidden = true;
     hoveredRef.current = null;
     const previous = sceneRef.current;
@@ -545,86 +590,159 @@ export function GraphView({ scene, onNodeClick, picking = false, theme, zoomCont
     if (!scene) {
       graph.clear();
       nodesRef.current = new Map();
+      leavingRef.current = new Map();
+      movingRef.current = false;
       return;
     }
 
-    const before = new Map<string, { x: number; y: number; size: number; opacity: number }>();
-    graph.forEachNode((id, a) => before.set(id, { x: a.x, y: a.y, size: a.size, opacity: a.opacity ?? 1 }));
     const next = new Map(scene.nodes.map((n) => [n.id, n]));
-    // 新しく現れるノードは、親（無ければ新しい中心）が元いた場所から出てくる。
-    const centerBefore = (scene.center && before.get(scene.center)) || { x: 0, y: 0 };
-    const tweens: { id: string; from: { x: number; y: number; size: number; opacity: number }; to: SceneNode }[] = [];
+    const reduced = prefersReducedMotion();
+    const started = performance.now();
+    const first = graph.order === 0;
+    // 同じ中心のまま、動きの途中で届いた更新（足跡・絞り込み）は、残りの時間で着地させる。
+    const remaining = landAtRef.current - started;
+    const duration = !keyChanged && movingRef.current && remaining > 0 ? Math.max(DUR.fast, remaining) : undefined;
+    // 中心の切り替えが終わる前に次の中心が来たら、次は短く動かす（続けて押す人を待たせない）。
+    // 同じ中心のまま足跡や絞り込みだけが変わった更新は数えない（1 回の操作で 2 回届くことがある）。
+    const rapid = keyChanged && started - lastStartRef.current < DUR.scene;
+    if (keyChanged) lastStartRef.current = started;
 
-    graph.clearEdges();
-    for (const id of graph.nodes()) if (!next.has(id)) graph.dropNode(id);
+    // 前の場面のノードのうち、次にいないものは薄れて消える。前の切り替えで消えかけていたものは、すぐ落とす。
+    const prevNodes = nodesRef.current;
+    const leaving = new Map<string, SceneNode>();
+    for (const id of graph.nodes()) {
+      if (next.has(id)) continue;
+      const old = prevNodes.get(id);
+      if (!old || reduced || leavingRef.current.has(id)) graph.dropNode(id);
+      else leaving.set(id, old);
+    }
+    const before = new Map<string, Attrs>();
+    graph.forEachNode((id, a) => before.set(id, { x: a.x, y: a.y, size: a.size, opacity: a.opacity ?? 1 }));
+    const o = sigma.graphToViewport({ x: 0, y: 0 });
+    const yDown = sigma.graphToViewport({ x: 0, y: 1 }).y > o.y;
+    const plan = planScene(before, scene.nodes, { center: scene.center, reduced: reduced || first, rapid, yDown, duration });
+    const tweens = new Map<string, Tween>(plan.tweens.map((tw) => [tw.id, tw]));
+
     for (const n of scene.nodes) {
       const visual = {
         color: p.kinds[n.kind].ring,
         shape: n.shape,
         zIndex: n.emphasis === "center" ? 3 : n.level <= 1 ? 2 : 1,
       };
-      let from = before.get(n.id);
-      if (from) {
-        graph.mergeNodeAttributes(n.id, visual);
-      } else {
-        const origin = (n.origin && before.get(n.origin)) || centerBefore;
-        from = { x: origin.x, y: origin.y, size: n.size * 0.4, opacity: 0 };
-        graph.addNode(n.id, { ...visual, ...from });
-      }
-      tweens.push({ id: n.id, from, to: n });
+      if (graph.hasNode(n.id)) graph.mergeNodeAttributes(n.id, visual);
+      else graph.addNode(n.id, { ...visual, ...valueAt(tweens.get(n.id)!, 0) });
     }
+    for (const id of leaving.keys()) graph.setNodeAttribute(id, "zIndex", 0);
+
+    // 線も残せるものは残す。消えるノードの線はノードと一緒に薄れ、ほかの古い線は落とす。
+    const pair = (a: string, b: string) => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`);
+    const wanted = new Set(scene.edges.map((e) => pair(e.a, e.b)));
+    graph.forEachEdge((key, _attrs, a, b) => {
+      if (!wanted.has(pair(a, b)) && !leaving.has(a) && !leaving.has(b)) graph.dropEdge(key);
+    });
     for (const e of scene.edges) {
-      if (graph.hasNode(e.a) && graph.hasNode(e.b) && !graph.hasEdge(e.a, e.b)) graph.addEdge(e.a, e.b, edgeLook(e, p));
+      if (!graph.hasNode(e.a) || !graph.hasNode(e.b)) continue;
+      if (graph.hasEdge(e.a, e.b)) graph.mergeEdgeAttributes(e.a, e.b, edgeLook(e, p));
+      else graph.addEdge(e.a, e.b, edgeLook(e, p));
     }
     nodesRef.current = next;
+    leavingRef.current = leaving;
+
+    // 見せ場「縁が蝶番になる」: 前の中心と新しい中心をつなぐ線（いまたどった縁）を、動いているあいだ牡丹にする。
+    // つながっていない人へ飛んだときは線が無いので、何もしない。動きを減らす設定でも残す（色は前庭に負担をかけない）。
+    const from = keyChanged ? previous?.center : null;
+    const hinge =
+      from && scene.center && from !== scene.center && graph.hasEdge(from, scene.center)
+        ? scene.edges.find((e) => pair(e.a, e.b) === pair(from, scene.center!))
+        : undefined;
+    if (hinge) {
+      hingeRef.current = hinge;
+      graph.mergeEdgeAttributes(hinge.a, hinge.b, { color: p.accent, size: 3.2, zIndex: 2 });
+    }
+    // 線を引き直したときに色が戻らないよう、まだ蝶番が残っていれば塗り直す。
+    const held = hingeRef.current;
+    if (held && graph.hasEdge(held.a, held.b)) {
+      if (!hinge) graph.mergeEdgeAttributes(held.a, held.b, { color: p.accent, size: 3.2, zIndex: 2 });
+      // 着地して少したったら戻す。動きを減らす設定でも、色の変化だけは見えるだけの時間を残す。
+      hingeTimerRef.current = window.setTimeout(unhinge, Math.max(plan.total, reduced ? DUR.scene : 0) + HINGE_HOLD);
+    }
 
     // 見出しの書体は、実際に描く文字（中心の名前と、画像が無いノードの頭文字）の分だけ取りに行く。
     const display = scene.nodes.filter((n) => !n.image).map((n) => n.initial).join("") + (next.get(scene.center ?? "")?.label ?? "");
     if (display) void document.fonts?.load?.(`700 17px ${FONT_DISPLAY}`, display)?.catch(() => {});
 
-    const extentFrom = extentRef.current;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const duration = reduced || before.size === 0 ? 0 : DURATION;
-    const started = performance.now();
-    // 中心が変わったときだけ視点を戻す。段数や絞り込みを変えただけなら、利用者の拡大・位置を保つ。
-    if (previous?.key !== scene.key) void sigma.getCamera().animate({ x: 0.5, y: 0.5, ratio: 1, angle: 0 }, { duration });
+    // 動きを減らす設定: 位置もカメラも即時にして、図全体を短い透明度で切り替える。
+    if (reduced && !first) root?.animate([{ opacity: 0.4 }, { opacity: 1 }], { duration: REDUCED_FADE, easing: "linear" });
 
+    const extentFrom = extentRef.current;
+    // 中心が変わったときだけ視点を戻す。段数や絞り込みを変えただけなら、利用者の拡大・位置を保つ。
+    // カメラもノードと同じ曲線・同じ時計（この rAF）で動かす。
+    const cam = sigma.getCamera();
+    cam.cancelAnimation();
+    const camFrom = keyChanged ? cam.getState() : null;
+    movingRef.current = plan.total > 0;
+    landAtRef.current = started + plan.total;
+    if (root) root.dataset.motion = movingRef.current ? "moving" : "idle";
+
+    const settle = (now: number) => {
+      // 着地のあと、名札が浮かび上がるあいだだけ描き続ける。
+      sigma.scheduleRender();
+      if (now - landedAtRef.current < DUR.fast) frameRef.current = requestAnimationFrame(settle);
+    };
     const step = (now: number) => {
-      const t = duration === 0 ? 1 : Math.min(1, (now - started) / duration);
-      const k = ease(t);
-      for (const { id, from, to } of tweens) {
-        if (!graph.hasNode(id)) continue;
-        graph.mergeNodeAttributes(id, {
-          x: lerp(from.x, to.x, k),
-          y: lerp(from.y, to.y, k),
-          size: lerp(from.size, to.size, k),
-          opacity: lerp(from.opacity, 1, k),
-        });
-      }
+      const t = now - started;
+      graph.updateEachNodeAttributes((id, a) => {
+        const tw = tweens.get(id);
+        if (!tw) return a;
+        const v = valueAt(tw, t);
+        a.x = v.x;
+        a.y = v.y;
+        a.size = v.size;
+        a.opacity = v.opacity;
+        return a;
+      });
+      // 線は両端の薄い方に合わせる（線だけ先に出たり、宙に残ったりしない）。
+      graph.updateEachEdgeAttributes((_e, a, _s, _t, sa, ta) => {
+        a.opacity = Math.min(sa.opacity ?? 1, ta.opacity ?? 1);
+        return a;
+      }, EDGE_HINTS);
+      const k = progressAt(plan, t);
       const extent = { x: lerp(extentFrom.x, scene.extent.x, k), y: lerp(extentFrom.y, scene.extent.y, k) };
       extentRef.current = extent;
       sigma.setCustomBBox({ x: [-extent.x, extent.x], y: [-extent.y, extent.y] });
-      sigma.scheduleRender();
-      if (t < 1) frameRef.current = requestAnimationFrame(step);
+      if (camFrom) {
+        cam.setState({ x: lerp(camFrom.x, 0.5, k), y: lerp(camFrom.y, 0.5, k), ratio: lerp(camFrom.ratio, 1, k), angle: 0 });
+      }
+      if (t < plan.total) {
+        sigma.scheduleRender();
+        frameRef.current = requestAnimationFrame(step);
+        return;
+      }
+      for (const id of leavingRef.current.keys()) if (graph.hasNode(id)) graph.dropNode(id);
+      leavingRef.current = new Map();
+      movingRef.current = false;
+      landedAtRef.current = now;
+      if (root) root.dataset.motion = "idle";
+      settle(now);
     };
     step(started);
   }, [scene]);
 
   const camera = () => sigmaRef.current?.getCamera();
   return (
-    <div className={`graph${picking ? " graph--picking" : ""}`}>
+    <div ref={rootRef} className={`graph${picking ? " graph--picking" : ""}`} data-motion="idle">
       <div ref={containerRef} className="graph__stage" role="img" aria-label={label} />
       <canvas ref={overlayRef} className="graph__overlay" aria-hidden="true" />
       <div ref={tipRef} className="graph__tip" aria-hidden="true" hidden />
       {zoomControls && (
         <div className="zoom" role="group" aria-label="グラフの表示">
-          <button type="button" aria-label="拡大" title="拡大" onClick={() => void camera()?.zoomIn({ duration: 200 })}>
+          <button type="button" aria-label="拡大" title="拡大" onClick={() => void camera()?.zoomIn({ duration: DUR.base, easing: ease.move })}>
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>
           </button>
-          <button type="button" aria-label="縮小" title="縮小" onClick={() => void camera()?.zoomOut({ duration: 200 })}>
+          <button type="button" aria-label="縮小" title="縮小" onClick={() => void camera()?.zoomOut({ duration: DUR.base, easing: ease.move })}>
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" /></svg>
           </button>
-          <button type="button" aria-label="全体を表示" title="全体を表示" onClick={() => void camera()?.reset({ duration: 200 })}>
+          <button type="button" aria-label="全体を表示" title="全体を表示" onClick={() => void camera()?.reset({ duration: DUR.base, easing: ease.move })}>
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" /></svg>
           </button>
         </div>
